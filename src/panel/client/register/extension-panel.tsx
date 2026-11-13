@@ -5,7 +5,7 @@ import { ExtensionPanel } from '../components/extension-panel'
 import { PANEL_ACTION_ORDER, PANEL_ID } from '../constants'
 import { locale } from '../locales'
 import { store } from '../store'
-import { chooseWorkspace, createSkillSession, sessionSnapshotOf, workspaceSnapshotOf } from './extension-panel.utils'
+import { chooseWorkspace, createSkillSession, openMarketLauncherOf, sessionSnapshotOf, workspaceSnapshotOf } from './extension-panel.utils'
 
 export const extensionPanelFeature = defineRegister<ClientContext>((controller, ctx, adapter) => {
   let panel: PanelHandle | undefined
@@ -49,7 +49,9 @@ export const extensionPanelFeature = defineRegister<ClientContext>((controller, 
     icon: props => <Icon as={Puzzle} size={props.size} />,
     render: () => (
       <PanelPage>
-        <ExtensionPanel createSkill={createSkill} />
+        {/* 市场入口每次渲染时重新探一遍：`pluginNavigation` / 官方插件页可能晚于本面板激活，
+            探不到就是 undefined（tab 里的按钮不渲染），而不是渲染一个死按钮。 */}
+        <ExtensionPanel createSkill={createSkill} openMarket={openMarketLauncherOf(ctx)} />
       </PanelPage>
     ),
   })

@@ -43,7 +43,7 @@ pnpm install
 pnpm typecheck     # tsc --noEmit（上游代码宽松，故 strict: false）
 pnpm build         # node scripts/build.mjs
 pnpm test          # node scripts/run-tests.mjs（签绑定 + 挑非 hardened Node，见约束 3）
-node .test/host-smoke.mjs 18   # 不起 DSH：mock ctx 调 apply()，数 webServer.register 的行数（应为 18）
+node .test/host-smoke.mjs 20   # 不起 DSH：mock ctx 调 apply()，数 webServer.register 的行数（应为 20）
 ```
 
 > **typecheck 需要宿主提供的 `@deepseek-ai/*` 类型**（约束 4 让它们保持 external）。作者机器上这些类型来自
@@ -83,7 +83,7 @@ curl -s http://127.0.0.1:<port>/dsh-toolshed/api/skills
 ```
 
 host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.js`，用带 `webServer` / `skills` / `connection` / `logger` / `on`
-的 mock ctx 调 `apply(ctx, { profile: 'desktop' })`，应注册 **18** 条路由且不抛错（`.test/host-smoke.mjs` 就是它）。
+的 mock ctx 调 `apply(ctx, { profile: 'desktop' })`，应注册 **20** 条路由且不抛错（`.test/host-smoke.mjs` 就是它）。
 
 ## 约定
 
@@ -103,15 +103,34 @@ host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.
   `lib/restart-helper.js`（**独立进程**的重启助手：拉起它的 Host 随后会被 taskkill，内联进主 bundle 就会一起消失，
   所以它是第三个 esbuild 入口，host 侧按固定文件名定位）。
 - `package.json` 的 `dsh.client.inject` 必须列出用到的官方客户端模块（layout / primitives / renderer / locale）。
-- **面板有三个 tab**（`client/components/extension-panel.tsx` 的 `rows`）：技能 / MCP / 会话（会话 = 已归档会话管理）。
+- **面板有四个 tab**（`client/components/extension-panel.tsx` 的 `rows`）：技能 / MCP / 会话（会话 = 已归档会话管理）/
+  **插件**（已加载插件清单 + 行级启停 + 「插件市场」入口）。
   标签页那一行的**最右侧**是重启控件（`restart-control.tsx`：刷新 + 重启服务）。
   新 tab 一律**追加在末尾**：`rows[0]` 就是首屏默认页，插到前面会改掉所有人的默认页。
 - **重启入口只有一个**：`restart-control.tsx`（标签页行最右）。不可重启时按钮禁用，原因用一句话写在 `title` 上
   （悬停即见）；`title` 也要挂在外层那个**不会禁用**的 `span.dshp-extension__tip` 上——Chromium 里禁用态 button
   收不到鼠标事件、title 常不弹。刷新按钮重新拉 `GET /api/host/restart`。别再单开「服务」页，也别往别的页面
   塞第二个重启按钮。
-- **插件市场收编已在 1.2.0 移除**（`service/market.ts`、`market-tab.tsx` 已删）：不要再把 `dshmarket`
+- **插件市场收编已在 1.2.0 移除**（`service/market.ts`、`market-tab.tsx` 已删）：不要再把社区 `dshmarket`
   的面板嵌回来，也不要再动它的设置页入口——那是它自己的入口。
+  2.1.0 的「插件市场」按钮走的是**官方** `@deepseek-ai/dsh-plugin-market`（它只往官方「插件」页注册一个
+  `plugins.tab` = `discover`，没有可复用组件），行为是「打开官方插件页」：`ctx.get('pluginNavigation').openList()`
+  → 降级 `ctx.layout.selectPanel('plugins')` → 都拿不到就不渲染按钮。**不要**为此重建市场 UI 或恢复 `dshmarket`。
+- **插件启停走官方 `pluginManager` 服务**（`service/plugins.ts`），**绝不**自己写 `cordis.patch.yml`：
+  官方那层已经做了「保注释 / 保 `!!js` customTags / 原子写 + `withFileLock`」三件事（AGENTS 约束 5 的完整实现），
+  而且 `setPluginEnabled` 失败**不抛异常**——回 `application: 'applied' | 'restart-required' | 'overridden' | 'failed'`，
+  所以调用方必须判 `application`，只 `try/catch` 会把失败当成功。desktop profile 带 `hmr` 时 `applied` 是热生效、不重启。
+  服务**不进 `apply.ts` 导出的 `inject`**：多一个名字会让缺该服务的组合（非 profile 启动 / 老 DSH）整块面板挂不上，
+  一律惰性 `ctx.get('pluginManager')`，取不到就回 503 `plugin-manager-unavailable` 让页面降级。
+  「停用 dsh-toolshed 自己」在服务层**硬拒绝**（409 `self-management`）：官方保护集里没有本插件，停掉面板当场消失、
+  没有恢复入口。
+- **侧栏自带的「插件」「更多」两行是 DOM 兜底隐藏的**（`register/sidebar-tweaks.ts`），属**已知易碎**方案：
+  官方 `ctx.slots` 没有 `when/hidden`、不能反注册他人条目，pins 还把 `plugins` 写死常驻，只有 DOM 一条路。
+  定位只用语义锚点（`[data-slot="sidebar.panellist"]` 认 nav、运行时按槽条目 label 反查 `aria-label` 认「插件」行、
+  `aria-haspopup="menu"` 认「更多」），**不用**构建哈希类名（`wtg9ga_*`）、不用 nth-child、不写死中英文；
+  全程 fail-open（命中 0 个什么都不做，最坏结果是「藏不掉」），`dispose` 逐字恢复原 inline 值。
+  官方改 `SidebarRoot` 结构（去掉 `aria-label` / 换掉 More 的交互 / 改 `data-slot` 锚点）就会静默失效——
+  只对 0.2.x 成立，升级大版本要重验。
 - 会话管理的服务层（`service/archive.ts`、`session-paths.ts`、`session-attachments.ts`、`pending-deletions.ts`）
   是**纯 Node**、不依赖 DSH 服务（靠 `ctx.get` 取），因此可以脱离 DSH 直接单测；它们的线协议类型在
   `service/archive.types.ts`，由 `routes/index.types.ts` 再导出给客户端。队列与重启日志的目录**保持**

@@ -133,18 +133,49 @@ pnpm install --dir ~/.dsh/profiles/<profile>
 
 ## 🧭 界面
 
-装好后侧边栏出现 **工具管理**（Puzzle 图标），点开是三个 tab，标签页那一行的**最右侧**是刷新 + 重启服务：
+装好后侧边栏出现 **工具管理**（Puzzle 图标），点开是四个 tab，标签页那一行的**最右侧**是刷新 + 重启服务：
 
 | Tab | 能力 |
 | --- | --- |
 | **技能** | 技能列表（按来源分组）、搜索、启用 / 停用、查看与编辑 SKILL.md、新建技能（在当前工作区开一条新对话并预填 `/skill-creator`）、删除、打开目录、刷新 |
 | **MCP** | 服务器列表（项目级 / 全局、启用状态、传输方式、URL / 命令）、新增与编辑表单、启用 / 停用、连接检查、复制片段、从其他 DSH profile 或 Claude / Cursor / Windsurf / VS Code 配置**导入扫描**、JSON 导出导入；写入后提示「需要重启」 |
 | **会话** | 已归档会话列表（**会话名 + 短 id**、工作区、精确磁盘占用、文件数、子代理数）、全选 / 半选 / 单选、批量**取消归档**、批量**永久删除**（dry-run 计划 → 确认 → 执行）、**待删除**队列与取消 |
+| **插件** | 当前 profile 加载的**插件清单**（模块名 / entryId / 启停状态 / 存活阶段）、搜索、**行级启用 / 停用**、不可启停的原因（悬停即见）、失败后**撤销上次变更**；右上角「插件市场」按钮打开官方插件页 |
 | **右上角重启控件** | 刷新（重新判断能否重启）+ 重启服务（进程级）。不可重启时按钮禁用，鼠标悬停即显示原因：有运行中的会话 / 排队输入 / 后台任务，或当前不是桌面应用 |
 
-> 1.2.0 起**不再收编插件市场**：即使装了 `dshmarket`，也由它自己的设置页入口提供；本面板只保留技能 / MCP / 已归档。
+> 1.2.0 起**不再收编社区市场 `dshmarket`**；2.1.0 起的「插件市场」入口打开的是**官方插件页**
+> （`@deepseek-ai/dsh-plugin-market` / `dsh-client-ui-plugin-market` 只往那一页注册一个 `discover` tab，
+> 没有可复用的组件，所以本面板不重建它）。
 
 技能启停沿用上游策略：写 SKILL.md 的 `user-invocable` 策略位，不新增旁路状态。
+
+### 🔌 插件与市场入口
+
+「插件」tab 是官方「插件」页的**最小只读投影 + 行级启停**，数据与动作都走官方 `pluginManager` 服务：
+
+- 清单来自 `pluginManager.listPlugins()`（本机 profile 实测 227 条），一行一个 Loader 条目：
+  模块名（省略 `@deepseek-ai/` 前缀，全名在 `title`）、`entryId`、启停状态、存活阶段（active / failed / …）。
+- 启停走 `pluginManager.setPluginEnabled(entryId, enabled)`：官方服务负责**改写 profile 的
+  `cordis.patch.yml`**（保留注释与 `!!js` 表达式、原子写、文件锁），所以本插件不自己写 YAML。
+  结果原样透出四种结局：`applied`（带 hmr 的 profile 立即生效）/ `restart-required`（需要重启）/
+  `overridden`（被更高优先级的 patch 覆盖）/ `failed`（附官方错误码与诊断）。
+  **`failed` 时配置文件其实已经写了**，所以页面会保留一条「撤销上次变更」。
+- 不可启停的行会说明原因：`management-required`（插件管理本身所需）或 `unaddressable`
+  （当前 profile 的 patch 无法唯一定位这一项），与官方页面同一套文案。
+- **不能在这里停用 `dsh-toolshed` 自己**：官方保护集里没有它，停掉面板会当场消失且没有恢复入口，
+  服务层直接回 409 `self-management`。
+- 当前部署没有 `pluginManager` 服务（没有 profile，或插件管理未启用）时如实回 503
+  `plugin-manager-unavailable`，页面显示「当前部署没有插件管理服务」，而不是装作空清单。
+
+「插件市场」按钮**不复刻**市场 UI：它按 `pluginNavigation.openList()` → `ctx.layout.selectPanel('plugins')`
+的顺序打开官方插件页（装了市场 bundle 时那里就有 `discover` tab）；两条都拿不到时按钮不渲染。
+
+> **已知限制（易碎）**：为了把入口收敛到本面板，`register/sidebar-tweaks.ts` 会隐藏侧栏自带的
+> 「插件」「更多」两行。官方 `ctx.slots` 没有「隐藏/条件注册」能力、也不能反注册他人的槽条目，所以这是
+> **DOM 兜底**：只用语义锚点（`data-slot="sidebar.panellist"`、按槽条目 label 反查的 `aria-label`、
+> `aria-haspopup="menu"`），不用构建哈希类名与 nth-child，且全程 fail-open。官方改侧栏结构后可能
+> **藏不掉**（不会报错、也不会误伤本面板那一行）。该补丁基于 DSH 0.2.x 结构，升级大版本需重验；
+> 想恢复原样，删掉 `client/index.ts` 里那行 `ctx.effect(sidebarTweaksFeature, …)` 即可。
 
 ### 🗂 已归档会话管理
 
@@ -187,12 +218,15 @@ Web / CLI 会如实显示「不可用」。重启会中断当前回合，请先�
 
 | 方法 | 路径 |
 | --- | --- |
-| GET | `/dsh-toolshed/api/skills`、`/api/mcp`、`/api/skill?name=`、`/api/roots`、`/api/import/scan`、`/api/archived`、`/api/host/restart` |
-| POST | `/api/mcp`、`/api/mcp/toggle`、`/api/mcp/check`、`/api/mcp/copy`、`/api/skills/refresh`、`/api/skill`、`/api/skill/policy`、`/api/import/apply`、`/api/roots`、`/api/open/dir`、`/api/host/restart`、`/api/archive/plan`、`/api/archive/unarchive`、`/api/archive/pending/cancel` |
+| GET | `/dsh-toolshed/api/skills`、`/api/mcp`、`/api/skill?name=`、`/api/roots`、`/api/import/scan`、`/api/archived`、`/api/plugins`、`/api/host/restart` |
+| POST | `/api/mcp`、`/api/mcp/toggle`、`/api/mcp/check`、`/api/mcp/copy`、`/api/skills/refresh`、`/api/skill`、`/api/skill/policy`、`/api/import/apply`、`/api/roots`、`/api/open/dir`、`/api/plugins/toggle`、`/api/host/restart`、`/api/archive/plan`、`/api/archive/unarchive`、`/api/archive/pending/cancel` |
 | DELETE | `/api/mcp`、`/api/skill`、`/api/roots`、`/api/archive` |
 
-`defineRoutes` 按 `(kind, path)` 收敛，同一路径的多个方法只占一行 `webServer.register`：1.1.0 起共 **18** 行。
+`defineRoutes` 按 `(kind, path)` 收敛，同一路径的多个方法只占一行 `webServer.register`：2.1.0 起共 **20** 行。
 错误体统一是 `{ error, code }`（重启被挡住时多一个 `blockers` 数组），面板靠 `code` 分支。
+`/api/plugins` 在缺少官方 `pluginManager` 服务时回 503 `plugin-manager-unavailable`；
+`/api/plugins/toggle` 在「停用 dsh-toolshed 自己」时回 409 `self-management`，正常请求一律 200
+（`application: 'failed'` 也是 200 —— 那是业务结局，不是传输错误）。
 
 ## 🛠 开发
 

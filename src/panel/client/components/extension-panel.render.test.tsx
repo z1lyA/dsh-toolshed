@@ -20,11 +20,11 @@ import { RestartControl } from './restart-control'
 const t = locale.text
 
 describe('扩展面板 tag 行', () => {
-  it('三个标签页都在，重启控件在同一行的右侧（不再单开「服务」页）', () => {
+  it('四个标签页都在，重启控件在同一行的右侧（不再单开「服务」页）', () => {
     const html = renderToStaticMarkup(<ExtensionPanel createSkill={async () => {}} />)
 
     expect(html).toContain('role="tablist"')
-    for (const key of ['skillsTab', 'mcpTab', 'archiveTab'] as const)
+    for (const key of ['skillsTab', 'mcpTab', 'archiveTab', 'pluginsTab'] as const)
       expect(html, key).toContain(t(key))
     expect(html).not.toContain(t('serviceTab'))
 

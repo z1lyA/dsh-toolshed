@@ -4,6 +4,7 @@ import {
   createSkillSession,
   currentSessionIdOf,
   lastSessionIdOf,
+  openMarketLauncherOf,
   pickSessionId,
   sessionCreatorOf,
   sessionCwdOf,
@@ -175,5 +176,66 @@ describe('chooseWorkspace', () => {
   it('accepts the legacy id field', () => {
     const workspaces = workspaceSnapshotOf({ items: [{ id: 'ws-legacy', sessionIds: ['s-1'] }] })
     expect(chooseWorkspace(sessions, workspaces)).toBe('ws-legacy')
+  })
+})
+
+/**
+ * 「插件市场」按钮的降级链（contract §3.2）：官方入口 → 官方插件页 → 不渲染。
+ * 每一步都必须静默降级：这些函数返回 undefined 时调用方就不渲染按钮。
+ */
+describe('openMarketLauncherOf', () => {
+  const mainWithPlugins = { entriesOfSlot: () => [{ options: { key: 'plugins' } }] }
+
+  it('prefers the official pluginNavigation entry', () => {
+    const openList = vi.fn()
+    const selectPanel = vi.fn()
+    const ctx = { get: (name: string) => (name === 'pluginNavigation' ? { openList } : name === 'layout' ? { selectPanel } : undefined) }
+
+    const open = openMarketLauncherOf(ctx)
+    expect(open).toBeTypeOf('function')
+    open?.()
+    expect(openList).toHaveBeenCalledTimes(1)
+    expect(selectPanel).not.toHaveBeenCalled()
+  })
+
+  it('falls back to layout.selectPanel("plugins") when pluginNavigation is absent', () => {
+    const selectPanel = vi.fn()
+    const ctx = { get: (name: string) => (name === 'layout' ? { selectPanel } : name === 'slots' ? mainWithPlugins : undefined) }
+
+    openMarketLauncherOf(ctx)?.()
+    expect(selectPanel).toHaveBeenCalledWith('plugins')
+  })
+
+  it('returns undefined without either official entry (button is not rendered)', () => {
+    expect(openMarketLauncherOf(undefined)).toBeUndefined()
+    expect(openMarketLauncherOf({})).toBeUndefined()
+    expect(openMarketLauncherOf({ get: () => undefined })).toBeUndefined()
+  })
+
+  it('returns undefined when the official plugins page is not registered in the main slot', () => {
+    const selectPanel = vi.fn()
+    const ctx = {
+      get: (name: string) => (name === 'layout'
+        ? { selectPanel }
+        : name === 'slots' ? { entriesOfSlot: () => [{ options: { key: 'chat' } }] } : undefined),
+    }
+
+    expect(openMarketLauncherOf(ctx)).toBeUndefined()
+    expect(selectPanel).not.toHaveBeenCalled()
+  })
+
+  it('swallows a throwing selectPanel instead of letting it escape the click handler', () => {
+    const selectPanel = vi.fn(() => { throw new Error('panel/not-registered') })
+    const ctx = { get: (name: string) => (name === 'layout' ? { selectPanel } : undefined) }
+    // 降级本身会打一行 console.debug（现场诊断用），测试里不必把它喷到输出里。
+    const quiet = vi.spyOn(console, 'debug').mockImplementation(() => {})
+
+    expect(() => openMarketLauncherOf(ctx)?.()).not.toThrow()
+    quiet.mockRestore()
+  })
+
+  it('reads services through ctx.get without breaking on a throwing guard', () => {
+    const ctx = { get: () => { throw new Error('inject guard') } }
+    expect(openMarketLauncherOf(ctx)).toBeUndefined()
   })
 })

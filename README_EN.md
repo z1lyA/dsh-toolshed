@@ -117,7 +117,7 @@ Restart DSH once after a host-half update, then hard-refresh the browser.
 
 ## 🧭 UI
 
-The sidebar shows **工具管理 / Toolshed** (Puzzle icon) with three tabs, and the **top-right corner of the tab row** holds
+The sidebar shows **工具管理 / Toolshed** (Puzzle icon) with four tabs, and the **top-right corner of the tab row** holds
 refresh + restart:
 
 - **Skills** (grouped list, search, enable/disable, view/edit SKILL.md, create — opens a new conversation in the
@@ -125,12 +125,48 @@ refresh + restart:
 - **MCP** (list, add/edit, enable/disable, connection check, copy, import scanning, JSON export/import; a write shows
   a "restart needed" banner),
 - **Sessions** (archived sessions — each row shows the **session title + short id**, see below),
+- **Plugins** (the plugins this profile loaded — module name / entryId / enabled / fiber phase — with search,
+  **per-row enable/disable**, a reason on rows that cannot be toggled, and **undo of the last change** when a toggle
+  fails; the **Plugin market** button opens the official Plugins page),
 - **restart control (top-right)**: refresh (re-check whether a restart is possible) + restart service.
   When a restart is not possible the button is disabled and its tooltip lists the reason — running sessions, queued
   input, background jobs, or "not the desktop app".
 
-> Since 1.2.0 the **plugin market is no longer embedded**: if `dshmarket` is installed it keeps its own settings-page
-> entry; this panel only carries Skills / MCP / Archived.
+> Since 1.2.0 the **community market `dshmarket` is no longer embedded**. Since 2.1.0 the **Plugin market** button
+> opens the **official** Plugins page (`@deepseek-ai/dsh-plugin-market` / `dsh-client-ui-plugin-market` only register a
+> `discover` tab there and export no reusable component), so this panel does not rebuild that UI.
+
+### 🔌 Plugins and the market entry
+
+The **Plugins** tab is a minimal projection of the official Plugins page plus per-row toggles; data and actions go
+through the official `pluginManager` service:
+
+- The list comes from `pluginManager.listPlugins()` (227 rows on this machine). Each row is one Loader entry: module
+  name (with the `@deepseek-ai/` prefix shortened; full name in the `title`), `entryId`, enabled state and fiber phase.
+- Toggling calls `pluginManager.setPluginEnabled(entryId, enabled)`. The official service **rewrites the profile's
+  `cordis.patch.yml`** (keeping comments and `!!js` expressions, atomic write, file lock), so this plugin never writes
+  YAML itself. The outcome is surfaced verbatim: `applied` (immediate on a profile with hmr) / `restart-required` /
+  `overridden` (a higher-priority patch wins) / `failed` (with the official code and diagnostic).
+  **A `failed` outcome still wrote the file**, so the page keeps an **undo the last change** action.
+- Rows that cannot be toggled say why: `management-required` (plugin management itself needs it) or `unaddressable`
+  (this profile's patch cannot address the row uniquely) — the same wording as the official page.
+- **dsh-toolshed cannot be disabled from here**: it is not in the official protected set, and disabling it would make
+  the panel vanish with no way back, so the host refuses with 409 `self-management`.
+- Without a `pluginManager` service (no profile, or plugin management off) the route answers 503
+  `plugin-manager-unavailable` and the page says so instead of pretending the list is empty.
+
+The **Plugin market** button does **not** reimplement the market: it opens the official Plugins page via
+`pluginNavigation.openList()`, falling back to `ctx.layout.selectPanel('plugins')`; if neither exists the button is not
+rendered.
+
+> **Known limitation (fragile)**: to funnel the entry points into this panel, `register/sidebar-tweaks.ts` hides the
+> sidebar's own **Plugins** and **More** rows. `ctx.slots` has no "hide / conditional registration" and cannot
+> unregister another plugin's entries, so this is a **DOM patch**: it only uses semantic anchors
+> (`data-slot="sidebar.panellist"`, an `aria-label` resolved from the slot entry's own label, `aria-haspopup="menu"`),
+> never hashed class names or nth-child, and it fails open. A structural change in the sidebar may simply make the
+> rows reappear (no error, and the Toolshed row is never affected). The patch targets the DSH 0.2.x structure and must
+> be re-verified on a major upgrade; to restore the stock sidebar, drop the `ctx.effect(sidebarTweaksFeature, …)` line
+> in `client/index.ts`.
 
 ### 🗂 Archived sessions
 

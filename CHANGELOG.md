@@ -1,5 +1,33 @@
 # Changelog
 
+## [2.1.0] — 2026-11-13
+
+### Added
+
+- **第四个 tab「插件」**：当前 profile 已加载插件的清单（模块名 / `entryId` / 启停状态 / 存活阶段）+ 搜索 +
+  **行级启用 / 停用**。宿主新增两条路由：`GET /api/plugins`（清单）、`POST /api/plugins/toggle`（启停）——
+  路由行 18 → **20**。
+- 启停复用**官方 `pluginManager` 服务**（`listPlugins` / `setPluginEnabled`），不自己写 `cordis.patch.yml`：
+  官方那层已经保证「保留注释与 `!!js` 表达式 + 原子写 + 文件锁」。结果原样透出四种真实结局
+  （`applied` 立即生效 / `restart-required` / `overridden` 被更高优先级 patch 覆盖 / `failed` 附官方错误码）；
+  不可启停的行给出官方同款原因（`management-required` / `unaddressable`）。
+- **「插件市场」按钮**：打开**官方**插件页（市场 bundle 只往那一页注册一个 `discover` tab，没有可复用组件），
+  降级顺序 `pluginNavigation.openList()` → `ctx.layout.selectPanel('plugins')`，都拿不到就不渲染按钮。
+  不重建市场 UI，也不恢复社区 `dshmarket` 收编。
+- **撤销上次变更**：官方 `failed` 结局其实**已经把配置写进文件**（`changed: true`），所以每次变更后页面留一个
+  「撤销」，用同一个 `entryId` 反向调一次——「启用了一个会崩的插件」时这是唯一的退路。
+- **隐藏侧栏自带的「插件」「更多」两行**（`register/sidebar-tweaks.ts`）：入口收敛到本面板。官方 `ctx.slots`
+  没有隐藏能力、也不能反注册他人的槽条目，因此用 DOM 兜底（语义锚点 + fail-open + dispose 逐字恢复），
+  属**已知易碎**方案，写入 README 的已知限制。
+
+### Fixed
+
+- **停用 `dsh-toolshed` 自己会被硬拒绝（409 `self-management`）**：官方保护集里没有本插件，真停掉会让面板
+  当场消失且没有恢复入口，所以宿主侧直接拒绝，而不是把入口交出去。
+- 线协议类型再导出的落点修正：`PluginRowView` 等四个类型误挂在 `../service/archive.types` 的再导出块上
+  （`archive.types` 里没有这些名字，`tsc` 会报 TS2305；esbuild 擦除类型所以 `build` / `test` 发现不了），
+  现单独从 `../service/plugins.types` 再导出。
+
 ## [2.0.2] — 2026-11-13
 
 ### Added

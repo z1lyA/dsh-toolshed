@@ -1,9 +1,9 @@
 /**
- * 已归档会话 / 重启路由的失败映射。
+ * 已归档会话 / 重启 / 插件启停路由的失败映射。
  *
  * 为什么单独一层：`ArchiveRequestError.code` 是稳定的机器码，页面靠它区分
- * 「不是归档会话」「队列写不进去」「被活跃会话挡住」；把映射写在这里，四个 handler
- * 只负责取 body 和调服务。
+ * 「不是归档会话」「队列写不进去」「被活跃会话挡住」「当前 DSH 缺插件管理服务」；把映射写在这里，
+ * handler 只负责取 body 和调服务。
  */
 import type { H3Event } from 'h3'
 import { ArchiveRequestError } from '../service/archive'
@@ -19,12 +19,14 @@ function statusOf(code: string): number {
     case 'body-too-large':
       return 413
     case 'restart-blocked':
+    case 'self-management':
       return 409
     case 'registry-unavailable':
     case 'persistence-unavailable':
     case 'restart-unavailable':
     case 'queue-unavailable':
     case 'queue-write-failed':
+    case 'plugin-manager-unavailable':
       return 503
     default:
       return 500

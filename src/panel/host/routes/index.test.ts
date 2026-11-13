@@ -11,6 +11,7 @@ import { routes } from '.'
 import { resetTestDshHome } from '../../../../.test/test-utils'
 import { setCurrentHostInstance } from '../config/runtime'
 import { createArchiveAdmin } from '../service/archive'
+import { createPluginsAdmin } from '../service/plugins'
 import { createRestartAdmin } from '../service/restart'
 
 vi.mock('dsh-tauri', async (importOriginal) => {
@@ -50,6 +51,8 @@ const EXPECTED_ROUTES: ReadonlyArray<readonly [string, string]> = [
   ['POST', `${P}/archive/pending/cancel`],
   ['GET', `${P}/host/restart`],
   ['POST', `${P}/host/restart`],
+  ['GET', `${P}/plugins`],
+  ['POST', `${P}/plugins/toggle`],
 ]
 
 /** 同一路径的多个方法由 defineRoutes 收敛为一行注册。 */
@@ -75,13 +78,39 @@ const SKILL = {
   provider: 'filesystem',
 }
 
+/**
+ * 假 pluginManager：字段形状照官方 `PluginInfo`（可启停行 / 受保护行 / 本面板自己那一行），
+ * 并记下每次启停的入参，用来断言「409 拒绝时没有真的去写」。
+ */
+function pluginManagerStub(): {
+  pluginManager: unknown
+  calls: Array<{ entryId: string, enabled: boolean }>
+} {
+  const calls: Array<{ entryId: string, enabled: boolean }> = []
+  const rows = [
+    { entryId: 'include:bash-sandbox', moduleName: '@deepseek-ai/dsh-pwsh-sandbox', enabled: true, fiberPhase: 'active', patchId: 'bash-sandbox' },
+    { entryId: 'include:hmr', moduleName: '@deepseek-ai/dsh-hmr', enabled: true, fiberPhase: 'active', readOnlyReason: 'management-required' },
+    { entryId: 'include:dsh-toolshed', moduleName: 'dsh-toolshed', enabled: true, fiberPhase: 'active', patchId: 'dsh-toolshed' },
+  ]
+  return {
+    calls,
+    pluginManager: {
+      listPlugins: async () => rows,
+      setPluginEnabled: async (entryId: string, enabled: boolean) => {
+        calls.push({ entryId, enabled })
+        return { changed: true, application: 'applied', stage: 'enable', target: entryId, enabled }
+      },
+    },
+  }
+}
+
 interface Harness {
   ctx: unknown
   registered: Map<string, HostRoute>
   dir: string
 }
 
-function createHarness(): Harness {
+function createHarness(services: Record<string, unknown> = {}): Harness {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-panel-extension-'))
   const registered = new Map<string, HostRoute>()
   return {
@@ -106,20 +135,23 @@ function createHarness(): Harness {
           ? { name, content: '# demo', path: join(dir, 'skills', name, 'SKILL.md') }
           : undefined),
       },
+      // 默认**不带** pluginManager：正好像真机上的老 DSH 那样，让「服务缺失 → 503」被现成的 start() 覆盖。
+      ...services,
     },
   }
 }
 
 function mount(harness: Harness): () => void {
   setCurrentHostInstance(harness.ctx as unknown as PanelExtensionHost)
-  // 会话管理与重启的实例按 harness 的临时 home 建：真正的服务（workspaceRegistry 等）
-  // 不在 mock ctx 里，正好用来验证「服务缺失时返回 503 而不是抛错」。
+  // 会话管理 / 重启 / 插件启停的实例按 harness 的临时 home 建：真正的服务（workspaceRegistry、
+  // pluginManager 等）默认不在 mock ctx 里，正好用来验证「服务缺失时返回 503 而不是抛错」。
   const config = { dshHome: harness.dir }
   return routes(harness.ctx as RoutesContext, {
     profileDirPath: join(harness.dir, 'profiles', 'web'),
     remountProvider: async () => {},
     archive: createArchiveAdmin(harness.ctx as never, config),
     restart: createRestartAdmin(harness.ctx as never, config),
+    plugins: createPluginsAdmin(harness.ctx as never),
   })
 }
 
@@ -147,8 +179,8 @@ async function listen(registered: Map<string, HostRoute>): Promise<string> {
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 }
 
-async function start(): Promise<{ base: string, dispose: () => void }> {
-  const harness = createHarness()
+async function start(services: Record<string, unknown> = {}): Promise<{ base: string, dispose: () => void }> {
+  const harness = createHarness(services)
   dirs.push(harness.dir)
   const dispose = mount(harness)
   const base = await listen(harness.registered)
@@ -287,6 +319,7 @@ describe('能力管理器路由声明', () => {
       ['DELETE', `${P}/roots`, {}, 'id is required'],
       ['POST', `${P}/roots`, { kind: 'zip' }, 'kind must be local or git'],
       ['POST', `${P}/open/dir`, {}, 'target is required'],
+      ['POST', `${P}/plugins/toggle`, {}, 'entryId and enabled are required'],
     ]
     for (const [method, path, body, error] of cases) {
       const response = await fetch(`${base}${path}`, {
@@ -344,6 +377,61 @@ describe('能力管理器路由声明', () => {
     })
     expect(crossOrigin.status).toBe(403)
     expect(await crossOrigin.json()).toEqual({ error: 'cross-origin-request' })
+
+    dispose()
+  })
+
+  it('gET /plugins 与 POST /plugins/toggle 走官方 pluginManager（200 列出、200 透出 application）', async () => {
+    const { pluginManager, calls } = pluginManagerStub()
+    const { base, dispose } = await start({ pluginManager })
+
+    const listed = await fetch(`${base}${P}/plugins`)
+    expect(listed.status).toBe(200)
+    expect(await listed.json()).toEqual({
+      plugins: [
+        { entryId: 'include:bash-sandbox', moduleName: '@deepseek-ai/dsh-pwsh-sandbox', enabled: true, fiberPhase: 'active', patchId: 'bash-sandbox' },
+        { entryId: 'include:hmr', moduleName: '@deepseek-ai/dsh-hmr', enabled: true, fiberPhase: 'active', readOnlyReason: 'management-required' },
+        { entryId: 'include:dsh-toolshed', moduleName: 'dsh-toolshed', enabled: true, fiberPhase: 'active', patchId: 'dsh-toolshed' },
+      ],
+    })
+
+    const toggled = await fetch(`${base}${P}/plugins/toggle`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ entryId: 'include:bash-sandbox', enabled: false }),
+    })
+    expect(toggled.status).toBe(200)
+    expect(await toggled.json()).toEqual({ ok: true, application: 'applied', changed: true })
+    expect(calls).toEqual([{ entryId: 'include:bash-sandbox', enabled: false }])
+
+    dispose()
+  })
+
+  it('pOST /plugins/toggle 拒绝停用 dsh-toolshed 自己（409 self-management，且没有真的去写）', async () => {
+    const { pluginManager, calls } = pluginManagerStub()
+    const { base, dispose } = await start({ pluginManager })
+
+    const response = await fetch(`${base}${P}/plugins/toggle`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ entryId: 'include:dsh-toolshed', enabled: false }),
+    })
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ code: 'self-management' })
+    expect(calls).toEqual([])
+
+    dispose()
+  })
+
+  it('gET /plugins 在 pluginManager 缺失时返回 503 而不是 200 空列表', async () => {
+    const { base, dispose } = await start()
+
+    const response = await fetch(`${base}${P}/plugins`)
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({
+      error: 'the pluginManager service is not mounted in this dsh build',
+      code: 'plugin-manager-unavailable',
+    })
 
     dispose()
   })

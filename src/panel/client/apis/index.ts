@@ -151,3 +151,15 @@ export function getSkills(options?: FetchOptions) {
 export function postSkillsRefresh(options?: FetchOptions) {
   return ofetch<Types.SkillsResponse>("/skills/refresh", { baseURL, method: "post", ...options });
 }
+
+/** @method get */
+export function getPlugins(options?: FetchOptions) {
+  return ofetch<Types.PluginsListResponse>("/plugins", { baseURL, method: "get", ...jsonError, ...options });
+}
+
+// `...jsonError` 是必需的：要靠 code 区分 409 `self-management` 与 503 `plugin-manager-unavailable`，
+// 默认的 onResponseError 只留一句「请求失败 (409)」，页面无法给出可执行的下一步。
+/** @method post */
+export function postPluginToggle(body: Types.PluginToggleBody, options?: FetchOptions) {
+  return ofetch<Types.PluginToggleResponse>("/plugins/toggle", { baseURL, method: "post", body, ...jsonError, ...options });
+}

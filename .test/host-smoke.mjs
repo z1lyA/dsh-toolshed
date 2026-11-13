@@ -2,9 +2,11 @@
  * host 半冒烟：不启动 DSH，用 mock ctx 调 apply()，数 webServer.register 的调用次数。
  *
  * 用法：node .test/host-smoke.mjs [期望路由数]
- * 默认期望 17（AGENTS.md 的「13 条路由」基线 + 已归档/会话管理 4 条；/host/restart 复用同一 path）。
+ * 默认期望 20（2.1.0 起）。口径是「唯一 (kind, path) 行数」，同 path 的多方法被 defineRoutes 收敛成一行：
+ * 技能 5（skills / skills·refresh / skill / skill·policy / open·dir）+ MCP 4 + 导入 2 + 根目录 1
+ * + 会话管理 5 + 重启 1（GET+POST 同一 path）+ 插件 2（plugins / plugins·toggle）。
  */
-const expected = Number(process.argv[2] ?? 17)
+const expected = Number(process.argv[2] ?? 20)
 
 const { apply } = await import('../lib/index.js')
 

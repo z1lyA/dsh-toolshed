@@ -16,6 +16,8 @@ import mcp from './mcp/get'
 import mcpSave from './mcp/post'
 import mcpToggle from './mcp/toggle/post'
 import openDir from './open/dir/post'
+import plugins from './plugins/get'
+import pluginToggle from './plugins/toggle/post'
 import rootsRemove from './roots/delete'
 import roots from './roots/get'
 import rootsAdd from './roots/post'
@@ -60,4 +62,9 @@ export const routes = defineRoutes<ExtensionRouteDeps>((disposer) => {
   // 服务页：GET 读状态、POST 执行重启（同一 path，仍是一行注册）。
   disposer.get({ kind: 'exact', path: '/dsh-toolshed/api/host/restart' }, restartCheck)
   disposer.post({ kind: 'exact', path: '/dsh-toolshed/api/host/restart' }, restart)
+
+  // 插件启停：走官方 `pluginManager` 服务（投影与判定在 service/plugins.ts，纯函数可脱离 DSH 单测）。
+  // 路径数 +2。/toggle 独立成路径而不是复用 POST /plugins：读清单是幂等的，启停会写用户 patch 层。
+  disposer.get({ kind: 'exact', path: '/dsh-toolshed/api/plugins' }, plugins)
+  disposer.post({ kind: 'exact', path: '/dsh-toolshed/api/plugins/toggle' }, pluginToggle)
 })

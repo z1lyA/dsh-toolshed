@@ -167,3 +167,90 @@ export function chooseWorkspace(
     return workspaces.recentWorkspaceId
   return items.map(workspaceId).find((id): id is string => id !== undefined)
 }
+
+/**
+ * 「打开官方插件页」的入口（＝「插件市场」按钮的行为）。
+ *
+ * 降级顺序即语义，任何一步拿不到都静默降级、绝不抛：
+ *   1. `ctx.get('pluginNavigation').openList()` —— 官方 entry-customization 用的正规入口
+ *      （比 selectPanel 语义化，也能直达某个 bundle 详情）；
+ *   2. `ctx.layout.selectPanel('plugins')` —— 官方「插件」页的 main key 恒为字符串 `plugins`；
+ *   3. 都拿不到 → `undefined`，调用方**不渲染**按钮。
+ *
+ * 为什么包 try/catch：`selectPanel` 在对端没注册这个 main 面板时会抛错（ui-layout 的校验），
+ * 而这里的调用点在点击回调里——抛出去只变成一条未捕获弹栈，用户看不到任何解释。
+ */
+export function openMarketLauncherOf(ctx: unknown): (() => void) | undefined {
+  const navigation = readService(ctx, 'pluginNavigation')
+  const openList = readMember(navigation, 'openList')
+  if (openList !== undefined)
+    return () => invokeQuietly('pluginNavigation.openList', () => openList.call(navigation))
+
+  const layout = readService(ctx, 'layout')
+  const selectPanel = readMember(layout, 'selectPanel')
+  if (selectPanel === undefined)
+    return undefined
+  // 探到「官方插件页没注册」就不给按钮（否则是个点了没反应的死按钮）；探不到时照旧给，
+  // 由 invokeQuietly 兜住抛错——宁可静默失败，也不要少一个本来能用的入口。
+  if (mainPanelRegistered(ctx) === false)
+    return undefined
+  return () => invokeQuietly('layout.selectPanel(plugins)', () => selectPanel.call(layout, 'plugins'))
+}
+
+/**
+ * 守卫安全的服务读取：`ctx.get(name)` 优先（Cordis 对未声明键的 inject 守卫会抛错），
+ * 回退属性读取；任何异常都等同于「服务不存在」。
+ */
+function readService(ctx: unknown, name: string): unknown {
+  if (ctx === null || ctx === undefined)
+    return undefined
+  const kind = typeof ctx
+  if (kind !== 'object' && kind !== 'function')
+    return undefined
+  const runtime = ctx as { get?: (name: string) => unknown } & Record<string, unknown>
+  try {
+    return typeof runtime.get === 'function' ? runtime.get(name) : runtime[name]
+  }
+  catch {
+    return undefined
+  }
+}
+
+/** 取一个可调用的服务成员；缺席或不是函数都返回 undefined（调用方据此降级）。 */
+function readMember(owner: unknown, name: string): ((...args: unknown[]) => unknown) | undefined {
+  if (owner === null || (typeof owner !== 'object' && typeof owner !== 'function'))
+    return undefined
+  try {
+    const member = (owner as Record<string, unknown>)[name]
+    return typeof member === 'function' ? member as (...args: unknown[]) => unknown : undefined
+  }
+  catch {
+    return undefined
+  }
+}
+
+/** 官方「插件」页是否注册在 `main` 槽；`undefined` = 这代核心探不出来（不是「没注册」）。 */
+function mainPanelRegistered(ctx: unknown): boolean | undefined {
+  const slots = readService(ctx, 'slots')
+  const entriesOfSlot = readMember(slots, 'entriesOfSlot')
+  if (entriesOfSlot === undefined)
+    return undefined
+  try {
+    const entries = entriesOfSlot.call(slots, 'main')
+    if (!Array.isArray(entries))
+      return undefined
+    return entries.some(entry => (entry as { options?: { key?: unknown } })?.options?.key === 'plugins')
+  }
+  catch {
+    return undefined
+  }
+}
+
+function invokeQuietly(label: string, run: () => unknown): void {
+  try {
+    void run()
+  }
+  catch (error) {
+    console.debug(`[dsh-toolshed] ${label} failed; the market entry stays inert`, error)
+  }
+}

@@ -42,10 +42,24 @@ const present = [
   [host, '/dsh-toolshed/api/archive/plan'],
   [host, '/dsh-toolshed/api/host/restart'],
   [host, 'pending-deletions.json'],
+  // 2.1.0：第四个 tab「插件」（清单 + 启停 + 官方页里的市场入口）
+  [client, 'pluginsTab'],
+  [client, '插件市场'],
+  [client, 'pluginMarketHint'],
+  [client, 'pluginUndo'],
+  // 侧栏「插件」「更多」两行的 DOM 兜底：标记属性与语义锚点都必须在产物里
+  [client, 'data-toolshed-hidden'],
+  [client, 'aria-haspopup'],
+  [client, 'sidebar.panellist'],
+  [host, '/dsh-toolshed/api/plugins'],
+  [host, '/dsh-toolshed/api/plugins/toggle'],
+  [host, 'plugin-manager-unavailable'],
 ]
 
 const absent = [
-  // 1.2.0 起：市场与「服务」页都从面板里移除了
+  // 1.2.0 起：市场与「服务」页都从面板里移除了。
+  // 2.1.0 的「插件市场」入口走的是**官方插件页**（dsh-plugin-market / ui-plugin-market），
+  // 不是当年社区那个 dshmarket —— 所以这三条继续必须为 0。
   [client, 'marketTab'],
   [client, 'MarketTab'],
   [client, 'serviceTab'],

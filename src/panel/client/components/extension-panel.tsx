@@ -5,11 +5,19 @@ import { locale } from '../locales'
 import { ArchiveTab } from './archive-tab'
 import { resolveActiveTab } from './extension-panel.utils'
 import { McpTab } from './mcp-tab'
+import { PluginsTab } from './plugins-tab'
 import { RestartControl } from './restart-control'
 import { SkillsTab } from './skills-tab'
 
 export interface ExtensionPanelProps {
   createSkill: () => Promise<void>
+  /**
+   * 「插件市场」入口（见 register/extension-panel.tsx 的三级降级）。
+   *
+   * 组件本身不碰 ctx：SSR 冒烟里没有上下文。`undefined` 表示连官方插件页都打不开，
+   * 此时按钮不渲染（渲染一个点了没反应的市场按钮比没有更糟）。
+   */
+  openMarket?: () => void
 }
 
 interface ExtensionTab {
@@ -18,13 +26,15 @@ interface ExtensionTab {
   render: () => ReactElement
 }
 
-export function ExtensionPanel({ createSkill }: ExtensionPanelProps): ReactElement {
+export function ExtensionPanel({ createSkill, openMarket }: ExtensionPanelProps): ReactElement {
   const t = locale.text
   const tabsId = useId()
   const rows: ExtensionTab[] = [
     { id: 'skills', label: t('skillsTab'), render: () => <SkillsTab t={t} createSkill={createSkill} /> },
     { id: 'mcp', label: t('mcpTab'), render: () => <McpTab t={t} /> },
     { id: 'archive', label: t('archiveTab'), render: () => <ArchiveTab t={t} /> },
+    // 新 tab 一律追加在末尾：`rows[0]` 是首屏默认页，插到前面会改掉所有人的默认页。
+    { id: 'plugins', label: t('pluginsTab'), render: () => <PluginsTab t={t} openMarket={openMarket} /> },
   ]
   const initialId = rows[0]?.id ?? 'skills'
   const [requestedId, setRequestedId] = useState(initialId)

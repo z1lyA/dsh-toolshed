@@ -1,10 +1,11 @@
 import type { ArchiveAdmin } from '../service/archive'
+import type { PluginsAdmin } from '../service/plugins'
 import type { RestartAdmin } from '../service/restart.types'
 
 /**
  * 注册期依赖：apply 时构造一次，请求期经 `dshRouteDepsOf` 取回。
  *
- * `archive` / `restart` 是本次 apply 的实例（各自持有自己的队列串行锁与状态目录），
+ * `archive` / `restart` / `plugins` 是本次 apply 的实例（各自持有自己的队列串行锁与状态目录），
  * 不落模块级全局——同一份路由声明被两组 deps 各注册一次时各读各的。
  */
 export interface ExtensionRouteDeps {
@@ -12,6 +13,8 @@ export interface ExtensionRouteDeps {
   remountProvider: () => Promise<void>
   archive: ArchiveAdmin
   restart: RestartAdmin
+  /** 插件启停：请求期才按名字取官方 `pluginManager`，缺服务时回 503 而不是让面板挂不上。 */
+  plugins: PluginsAdmin
 }
 
 /**
@@ -39,6 +42,17 @@ export type {
   RestartLaunchResponse,
   RestartStatusResponse,
 } from '../service/archive.types'
+
+/**
+ * 「插件」tab 的线协议类型：真实定义在 `service/plugins.types.ts`，与上一条同理再导出
+ * （客户端 `apis/index.type.ts` 只认 `host/routes/index.types.ts` 一个入口）。
+ */
+export type {
+  PluginRowView,
+  PluginsListResponse,
+  PluginToggleBody,
+  PluginToggleResponse,
+} from '../service/plugins.types'
 
 export interface ActionResult {
   ok: boolean

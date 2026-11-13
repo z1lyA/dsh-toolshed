@@ -8,6 +8,7 @@ import { PLUGIN_ID } from '../shared/constants'
 import { clearHostRuntime, resetProviderRuntime, setCurrentHostInstance } from './config/runtime'
 import { routes } from './routes'
 import { createArchiveAdmin } from './service/archive'
+import { createPluginsAdmin } from './service/plugins'
 import { profile } from './service/profile'
 import { provider } from './service/provider'
 import { createRestartAdmin } from './service/restart'
@@ -45,10 +46,12 @@ export function apply(ctx: HostContext, config?: Config): void {
     }
     const archive = createArchiveAdmin(hub, sessionConfig)
     const restart = createRestartAdmin(hub, sessionConfig)
+    // 插件启停：官方 pluginManager 也不进 inject（同上一条理由），实例只做「请求期按名字取」的委托。
+    const plugins = createPluginsAdmin(hub)
 
     ctx.effect(() => startProvider(remountProvider), 'dsh-toolshed: skill provider')
     ctx.effect(
-      () => routes(hostCtx as unknown as HostContext, { profileDirPath, remountProvider, archive, restart }),
+      () => routes(hostCtx as unknown as HostContext, { profileDirPath, remountProvider, archive, restart, plugins }),
       'dsh-toolshed: routes',
     )
     sweepPendingOnBoot(hostCtx, archive)
