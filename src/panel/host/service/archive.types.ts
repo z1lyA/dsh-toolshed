@@ -14,6 +14,8 @@ export interface ArchivedPendingView {
 /** 列表里的一行。 */
 export interface ArchivedSessionView {
   id: string
+  /** 会话名（投影缓存里的 `record.rows.title.val`；没有就退回首条输入的前缀，再没有就是 undefined）。 */
+  title?: string
   workspaceId?: string
   workspaceTitle?: string
   logBytes: number
@@ -45,6 +47,7 @@ export interface ArchiveListResponse {
 /** 计划里的一行：`ok:false` 表示这条不会被删（附原因码）。 */
 export interface ArchivePlanItemView {
   id: string
+  title?: string
   ok: boolean
   code?: string
   message?: string

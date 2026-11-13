@@ -80,8 +80,8 @@ async function main(): Promise<void> {
   console.log('totals:', JSON.stringify(list.totals))
   console.log('defaults:', JSON.stringify(list.defaults))
   for (const item of list.items.slice(0, 6)) {
-    console.log(`  ${item.id}  bytes=${item.totalBytes} files=${item.logFiles} hasLog=${item.hasLog}`
-      + ` live=${item.live} descendants=${item.descendants.length} ws=${item.workspaceTitle ?? '-'}`)
+    console.log(`  ${item.id}  title=${JSON.stringify(item.title ?? null)}  bytes=${item.totalBytes} files=${item.logFiles}`
+      + ` hasLog=${item.hasLog} live=${item.live} descendants=${item.descendants.length} ws=${item.workspaceTitle ?? '-'}`)
   }
   const withLog = list.items.filter(item => item.hasLog)
   const withoutLog = list.items.filter(item => !item.hasLog)

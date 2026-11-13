@@ -259,6 +259,17 @@ export default b('extension', [
     fontWeight: '600',
     fontFamily: 'var(--ds-font-family-code)',
   }),
+  // 会话名（用户起的标题）：正常字体、允许省略；没有标题时就退化成 id，用上面的 code 字体更合适。
+  e('session-name', {
+    minWidth: '0',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    fontSize: '13px',
+    lineHeight: '20px',
+    fontWeight: '600',
+  }),
+  e('session-id', { fontFamily: 'var(--ds-font-family-code)', fontSize: '11px' }),
   e('session-meta', {
     display: 'flex',
     alignItems: 'center',

@@ -39,11 +39,14 @@ function writeSessionLog(home: string, project: string, id: string, bytes = 512)
   return dir
 }
 
-function writeProjectionCache(home: string, id: string): string {
+function writeProjectionCache(home: string, id: string, title?: string): string {
   const dir = join(home, 'storages', 'session_projcache', 'sessions')
   mkdirSync(dir, { recursive: true })
   const file = join(dir, `${id}.json`)
-  writeFileSync(file, '{"v":1}')
+  const payload = title === undefined
+    ? { version: 1, record: { rows: {} } }
+    : { version: 1, record: { rows: { title: { ver: 1, seq: 1, val: title } } } }
+  writeFileSync(file, JSON.stringify(payload))
   return file
 }
 
@@ -189,15 +192,17 @@ describe('会话管理路由（HTTP 级）', () => {
 
     const persistentLog = writeSessionLog(world.home, 'proj', persistentId, 1024)
     const liveLog = writeSessionLog(world.home, 'proj', liveId, 256)
-    writeProjectionCache(world.home, persistentId)
+    writeProjectionCache(world.home, persistentId, '接入体重秤')
     const liveCache = writeProjectionCache(world.home, liveId)
     const base = await start(world)
 
     const listed = await (await fetch(`${base}${P}/archived`)).json() as any
     expect(listed.items.map((item: any) => item.id).sort()).toEqual([persistentId, liveId])
     const persistentRow = listed.items.find((item: any) => item.id === persistentId)
-    expect(persistentRow).toMatchObject({ hasLog: true, logFiles: 1, workspaceTitle: 'CodeProject', live: false })
+    expect(persistentRow).toMatchObject({ hasLog: true, logFiles: 1, workspaceTitle: 'CodeProject', live: false, title: '接入体重秤' })
     expect(persistentRow.logBytes).toBeGreaterThanOrEqual(1024)
+    // 投影缓存里没有标题时不给假名字（页面会退回显示 id）
+    expect(listed.items.find((item: any) => item.id === liveId).title).toBeUndefined()
     expect(listed.totals).toMatchObject({ count: 2, pending: 0 })
 
     const plan = await (await fetch(`${base}${P}/archive/plan`, jsonBody({ ids: [persistentId, liveId] }))).json() as any

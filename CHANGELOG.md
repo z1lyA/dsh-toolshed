@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.0.2] — 2026-11-13
+
+### Added
+
+- **「会话」tab 显示会话名**（不再只有一串 id）：行首是投影缓存里的 `record.rows.title.val`（就是侧栏里那个标题），
+  没有标题时退回首条输入的前缀，再没有就显示 id；**名字下面用小号等宽字体显示短 id**，同名会话也能区分。
+  宿主侧 `GET /api/archived` 与 `POST /api/archive/plan` 都新增 `title` 字段（读 `storages/session_projcache/
+  sessions/<id>.json`，不解压会话日志）。真机核对：15 条归档会话全部拿到名字（如「接入体重秤」
+  「逆向米家获取体重秤数据」「数字个人工作台可行性分析」）。
+
 ## [2.0.1] — 2026-11-13
 
 ### Fixed

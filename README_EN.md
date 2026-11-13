@@ -124,7 +124,7 @@ refresh + restart:
   current workspace with `/skill-creator` prefilled — delete, open folder, refresh),
 - **MCP** (list, add/edit, enable/disable, connection check, copy, import scanning, JSON export/import; a write shows
   a "restart needed" banner),
-- **Sessions** (archived sessions — see below),
+- **Sessions** (archived sessions — each row shows the **session title + short id**, see below),
 - **restart control (top-right)**: refresh (re-check whether a restart is possible) + restart service.
   When a restart is not possible the button is disabled and its tooltip lists the reason — running sessions, queued
   input, background jobs, or "not the desktop app".

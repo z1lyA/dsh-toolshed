@@ -17,7 +17,7 @@
 import type { ArchiveAttachmentOutcome, ArchiveCancelResponse, ArchiveListResponse, ArchivePlanResponse, ArchiveRemoveItemView, ArchiveRemoveResponse, ArchiveSweepResponse, ArchiveUnarchiveResponse, ArchivedSessionView } from './archive.types'
 import type { SessionRoots, SessionRootsConfig } from './session-paths'
 import type { PendingEntry } from './pending-deletions'
-import { lstat, readdir, rm } from 'node:fs/promises'
+import { lstat, readdir, readFile, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { extractAttachmentIds, pruneUnreferencedAttachments, scanAttachmentReferences } from './session-attachments'
 import { PENDING_MAX, createPendingEntry, readPending, writePending } from './pending-deletions'
@@ -238,6 +238,30 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
     }
   }
 
+  /**
+   * 会话名（人看的那个「标题」）。
+   *
+   * 只读投影缓存：`record.rows.title.val` 是用户看到的名字（如「接入体重秤」）；
+   * 没有标题时退回首条输入的前缀（`titleInput.val.first.text`），再没有就返回 undefined，
+   * 由页面退化成显示 id —— 绝不为了"好看"去读会话日志（那是 zstd，且没必要为列表解压）。
+   */
+  const readSessionTitle = async (sessionId: string): Promise<string | undefined> => {
+    try {
+      const text = await readFile(projectionCachePath(roots.storages, sessionId), 'utf8')
+      const rows = (JSON.parse(text) as any)?.record?.rows
+      const title = rows?.title?.val
+      if (typeof title === 'string' && title.trim() !== '')
+        return title.trim()
+      const first = rows?.titleInput?.val?.first?.text
+      if (typeof first === 'string' && first.trim() !== '')
+        return first.trim().slice(0, 80)
+    }
+    catch {
+      /* 缓存缺失/损坏都只是"没有名字"，不影响删除逻辑 */
+    }
+    return undefined
+  }
+
   /** 读目标会话引用到的附件 id；不完整时明确报告。 */
   const collectTargetReferences = async (sessionIds: string[]): Promise<{ complete: boolean, ids: Set<string>, reason?: string }> => {
     const events = query()?.listEvents
@@ -409,6 +433,7 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
       const pendingEntry = pendingById.get(id)
       inventory.push({
         id,
+        title: await readSessionTitle(id),
         workspaceId: workspace === undefined ? undefined : String(workspace.id),
         workspaceTitle: workspace === undefined ? undefined : String(workspace.title),
         logBytes: measured.logBytes,
@@ -456,6 +481,7 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
       const live = liveSession(id) !== undefined
       items.push({
         id,
+        title: await readSessionTitle(id),
         ok: true,
         descendants,
         live,

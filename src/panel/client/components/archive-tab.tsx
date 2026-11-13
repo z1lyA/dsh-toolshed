@@ -263,12 +263,14 @@ export function ArchiveTab({ t }: ArchiveTabProps): ReactElement {
               <Checkbox
                 checked={selected.has(row.id)}
                 disabled={busy}
-                aria-label={shortId(row.id)}
+                aria-label={row.title ?? shortId(row.id)}
                 onChange={next => toggleOne(row.id, next)}
               />
               <div className="dshp-extension__session-body">
                 <div className="dshp-extension__session-title-row">
-                  <strong className="dshp-extension__session-title" title={row.id}>{shortId(row.id)}</strong>
+                  <strong className="dshp-extension__session-name" title={row.title ?? row.id}>
+                    {row.title ?? shortId(row.id)}
+                  </strong>
                   {row.live && <Tag tone="warning">{t('archiveLive')}</Tag>}
                   {row.pending !== undefined && <Tag tone="info">{t('archivePending')}</Tag>}
                   {row.pending?.lastError != null && <Tag tone="danger">{t('archivePendingFailed')}</Tag>}
@@ -276,6 +278,8 @@ export function ArchiveTab({ t }: ArchiveTabProps): ReactElement {
                   {!row.hasLog && <Tag tone="neutral">{t('archiveNoLog')}</Tag>}
                 </div>
                 <div className="dshp-extension__session-meta">
+                  {/* 有名字时 id 退到第二行做区分（同名会话不少见），没有名字时它就是标题 */}
+                  {row.title !== undefined && <span className="dshp-extension__session-id" title={row.id}>{shortId(row.id)}</span>}
                   {row.workspaceTitle !== undefined && <span>{row.workspaceTitle}</span>}
                   <span>{formatBytes(row.totalBytes)}</span>
                   <span>
