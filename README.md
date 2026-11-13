@@ -203,6 +203,14 @@ pnpm build         # node scripts/build.mjs → lib/index.js + lib/client.js + l
 pnpm test          # node scripts/run-tests.mjs（vitest；见下方说明）
 ```
 
+**远程仓库（本项目已脱离 fork 身份，是独立仓库）**：
+
+| remote | 指向 | 用途 |
+| --- | --- | --- |
+| `origin` | `z1lyA/dsh-toolshed` | 本项目主仓（独立，非 fork） |
+| `upstream` | `functy23/dsh-mcp-studio` | 只读参考：上游框架层的修复可以 `git cherry-pick` 过来 |
+| `fork-archive` | `z1lyA/dsh-toolshed-fork` | 改名/脱离前的 fork 备份，确认不再需要后可删 |
+
 > 本仓库**没有 CI**：验证依赖 DSH 宿主与 macOS 签名，跑在干净 runner 上只能验一半，
 > 所以 `typecheck` / `test` / `build` 一律以本地为准。
 
