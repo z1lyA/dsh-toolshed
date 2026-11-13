@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react'
 import type { ArchivePlanResponse, ArchiveRemoveResponse, ArchivedSessionView } from '../apis/index.type'
 import type { ArchiveFailureLine, ArchiveTabProps } from './archive-tab.types'
-import { ArrowRotateRight, Button, Checkbox, Icon, IconButton, Modal, StateDot, Tag, Tray } from 'dsh-tauri-ui/client'
+import { Button, Checkbox, Icon, Modal, StateDot, Tag, Tray } from 'dsh-tauri-ui/client'
 import { useEffect, useMemo, useState } from 'react'
 import { deleteArchived, getArchived, postArchivePendingCancel, postArchivePlan, postArchiveUnarchive } from '../apis'
 import { useTimers } from '../hooks/use-timers'
@@ -211,14 +211,8 @@ export function ArchiveTab({ t }: ArchiveTabProps): ReactElement {
         <span className="dshp-extension__head-icon"><Icon as={Tray} size={16} /></span>
         <h3>{t('archiveTitle')}</h3>
         <span className="dshp-extension__spacer" />
-        <IconButton
-          variant="toolbar"
-          icon={<Icon as={ArrowRotateRight} />}
-          aria-label={t('refresh')}
-          title={t('refresh')}
-          disabled={busy}
-          onClick={() => setReload(value => value + 1)}
-        />
+        {/* 用文字按钮而不是图标：面板右上角的重启控件已经有一个刷新图标，两个旋转图标并排会认错。 */}
+        <Button variant="ghost" size="sm" disabled={busy} onClick={() => setReload(value => value + 1)}>{t('refresh')}</Button>
       </div>
       <p className="dshp-extension__intro">{t('archiveIntro')}</p>
 

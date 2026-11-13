@@ -5,7 +5,7 @@ const zh = {
   extension: '扩展管理',
   skillsTab: '技能',
   mcpTab: 'MCP',
-  archiveTab: '已归档',
+  archiveTab: '会话',
   skillsTitle: '技能管理',
   skillsIntro: '查看与编辑 dsh 发现的技能；用户级与仓库技能可就地管理。卡片开关控制技能是否加载。',
   newSkill: '新建技能',
@@ -145,7 +145,7 @@ const zh = {
   serviceBlockerRunning: '运行中的会话',
   serviceBlockerQueued: '排队中的输入',
   serviceBlockerJob: '后台任务',
-  restartBlocked: '被正在运行的工作阻止',
+  restartBlocked: '无法重启',
   restartEntryInHeader: '重启入口在面板右上角。',
 }
 
@@ -155,7 +155,7 @@ const en: Record<LocaleKey, string> = {
   extension: 'Extension Management',
   skillsTab: 'Skills',
   mcpTab: 'MCP',
-  archiveTab: 'Archived',
+  archiveTab: 'Sessions',
   skillsTitle: 'Skills',
   skillsIntro: 'View and manage discovered skills, including user and repository skills. Each card switch controls loading.',
   newSkill: 'New skill',
@@ -295,7 +295,7 @@ const en: Record<LocaleKey, string> = {
   serviceBlockerRunning: 'running session',
   serviceBlockerQueued: 'queued input',
   serviceBlockerJob: 'background job',
-  restartBlocked: 'Blocked by active work',
+  restartBlocked: 'Cannot restart',
   restartEntryInHeader: 'The restart control is in the top-right corner.',
 }
 

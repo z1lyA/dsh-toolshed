@@ -221,6 +221,11 @@ export default b('extension', [
     gap: '6px',
     marginLeft: 'auto',
   }),
+  // 包一层不会禁用的元素挂 title：禁用态的 button 在 Chromium 里收不到鼠标事件、title 常不弹。
+  e('tip', {
+    display: 'inline-flex',
+    alignItems: 'center',
+  }),
   // 已归档明细是「一行一条会话」的清单，不是卡片网格：内容宽度也不一样（id、体积、徽标）。
   e('sessions', {
     display: 'flex',

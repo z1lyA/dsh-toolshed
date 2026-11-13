@@ -51,12 +51,15 @@ describe('重启控件', () => {
     // 不可重启时按钮禁用、原因挂在 title 上（鼠标悬停即可看到，不用点开）
     expect(html).toContain(t('loading'))
     expect(html).toContain('data-disabled="true"')
+    // 禁用态 button 的 title 不一定弹，所以同时挂在外层不会禁用的 span 上
+    expect(html).toContain('dshp-extension__tip')
+    expect(html).toContain(`title="${t('loading')}"`)
     expect(html).not.toContain('undefined')
   })
 })
 
 describe('已归档页', () => {
-  it('载入态就有标题、全选与批量动作', () => {
+  it('载入态就有标题、文字「刷新」按钮、全选与批量动作', () => {
     const html = renderToStaticMarkup(<ArchiveTab t={t} />)
 
     expect(html).toContain(t('archiveTitle'))
@@ -64,6 +67,8 @@ describe('已归档页', () => {
     expect(html).toContain(t('archiveUnarchive'))
     expect(html).toContain(t('archiveCancelPending'))
     expect(html).toContain(t('loading'))
+    // 刷新在这里是文字按钮（右上角重启控件已经占了一个刷新图标）
+    expect(html).toContain(`data-prim="Button">${t('refresh')}<`)
     expect(html).not.toContain('undefined')
   })
 })

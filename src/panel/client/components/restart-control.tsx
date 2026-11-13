@@ -28,11 +28,10 @@ export function RestartControl({ t }: RestartControlProps): ReactElement {
   const [error, setError] = useState<string | null>(null)
   const { mounted, later } = useTimers()
 
-  const blockerLabel = (blocker: RestartBlockerView): string => {
-    const kind = blocker.kind === 'running'
-      ? t('serviceBlockerRunning')
-      : blocker.kind === 'queued' ? t('serviceBlockerQueued') : t('serviceBlockerJob')
-    return `${kind} ${blocker.id}`
+  const kindLabel = (kind: RestartBlockerView['kind']): string => {
+    if (kind === 'running')
+      return t('serviceBlockerRunning')
+    return kind === 'queued' ? t('serviceBlockerQueued') : t('serviceBlockerJob')
   }
 
   const load = (): void => {
@@ -64,11 +63,15 @@ export function RestartControl({ t }: RestartControlProps): ReactElement {
   const blockers = status?.blockers ?? []
   const disabled = busy || restarting || !available || !canRestart
 
+  /** 一句话概述原因（不列 id）：tooltip 只回答「为什么现在不能重启」。 */
+  const blockedSummary = (): string =>
+    `${t('restartBlocked')}: ${[...new Set(blockers.map(blocker => blocker.kind))].map(kindLabel).join(', ')}`
+
   const hint = status === null
     ? t('loading')
     : !available
         ? t('serviceOnlyDesktop')
-        : canRestart ? t('serviceReady') : `${t('restartBlocked')}: ${blockers.map(blockerLabel).join(', ')}`
+        : canRestart ? t('serviceReady') : blockedSummary()
 
   const doRestart = (): void => {
     setError(null)
@@ -118,16 +121,22 @@ export function RestartControl({ t }: RestartControlProps): ReactElement {
         disabled={busy || restarting}
         onClick={load}
       />
-      <Button
-        variant="ghost"
-        size="sm"
-        disabled={disabled}
-        title={hint}
-        aria-label={t('restartNow')}
-        onClick={() => setConfirm(true)}
-      >
-        {restarting ? t('restarting') : t('restartNow')}
-      </Button>
+      {/*
+        禁用态的 <button> 在 Chromium 里收不到鼠标事件，title 也常常不弹。
+        title 同时挂在不会禁用的外层 span 上，保证「为什么不能重启」悬停一定能看到。
+      */}
+      <span className="dshp-extension__tip" title={hint}>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={disabled}
+          title={hint}
+          aria-label={t('restartNow')}
+          onClick={() => setConfirm(true)}
+        >
+          {restarting ? t('restarting') : t('restartNow')}
+        </Button>
+      </span>
 
       <Modal
         open={confirm}
