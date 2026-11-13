@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.1.0] — 2026-11-13
+
+### Added
+
+- **「已归档」tab —— 已归档会话管理**（移植自 [z1lyA/dsh-session-admin](https://github.com/z1lyA/dsh-session-admin)）。
+  扩展面板变成五个标签页：市场（装了 dshmarket 时）/ 技能 / MCP / 已归档 / 服务。已归档页提供：
+  全量列表（工作区、精确磁盘占用、文件数、子代理数）、全选-半选-单选、批量**取消归档**、
+  批量**永久删除**（dry-run 计划 → 确认弹窗 → 执行）、**待删除**队列与「取消待删除」。
+  删除的边界条件与 DSH 架构一一对应：只接受注册表里归档态的会话；仍在内存里活着的会话
+  （含 subagent 派生子会话）不强删，只登记到 `$DSH_HOME/session-admin/pending-deletions.json`，
+  下次 Host 启动时执行；整棵日志目录（绝不截断）、投影缓存、绑定会话的定时任务一起清掉；
+  附件只在**完整**引用扫描证明无人引用后删除，扫描不完整时一个都不删。
+- **「服务」tab —— 进程级重启**（同样来自 dsh-session-admin）。重启是宿主级动作：先检查工作区里
+  运行中的回合、排队中的输入、running/stopping 的后台 job（**已归档会话豁免**），有交叉就拒绝并
+  列出原因；无交叉时写重启计划、拉起脱离进程树的助手（`lib/restart-helper.js`）、HTTP 回复后
+  `taskkill /T` 当前 Electron 进程树，助手等旧进程退出后用 GUI 方式重拉同一个可执行文件。
+  日志在 `$DSH_HOME/session-admin/restart.log`。
+- 新路由（`/dsh-mcp-studio/api/*`）：`GET /archived`、`POST /archive/plan`、`DELETE /archive`、
+  `POST /archive/unarchive`、`POST /archive/pending/cancel`、`GET /host/restart`（与既有 POST 同路径，
+  `defineRoutes` 按 `(kind, path)` 收敛，路由行数 13 → 18）。
+
+### Changed
+
+- **重启只剩一个入口，且换成了桌面可用的实现**。原实现的判据是 `DSH_DESKTOP === '1'` + 按 `dsh` CLI 语义
+  重新 exec argv：桌面壳既没设那个环境变量、Host 进程的 argv 又是 `...\dsh-desktop-host\lib\index.js`
+  （不匹配 `bin.js|dsh` 正则），实际会落到 `cmd /c dsh` 兜底分支，而且没有「有会话在跑就拦住」的安全闸；
+  客户端那侧的 `window.dshDesktop.restartSidecar` 在本机 app.asar 里也查无此符号。
+  现在统一走 session-admin 那套已在本机多次成功重启的实现（`restart.log` 可查），MCP 页只保留
+  「配置已写入，需要重启」的提示与「去服务页」跳转。
+- `host` 半新增第三个构建产物 `lib/restart-helper.js`（独立入口）：重启助手必须是磁盘上真实存在、
+  且与主 bundle 分离的脚本，否则拉起它的 Host 被终止后它会一起消失。
+
+### Fixed
+
+- `/host/restart` 的 403 响应补上稳定的 `code: 'forbidden'`，与其余错误体形状一致。
+
 ## [1.0.6] — 2026-10-03
 
 ### Fixed
