@@ -95,6 +95,10 @@ host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.
   类型声明，`isString(x)` 不收窄 `unknown`，用本地类型守卫。
 - 测试资产：`.test/test-utils.ts` 提供 `testDshHome` / `resetTestDshHome`（DSH_HOME 必须是模块加载期常量，
   `vi.mock` 工厂被提升后会捕获它的值，所以「每例一份干净环境」靠清空同一目录实现）。
+  另外三个手工脚本（不进 vitest）：`.test/host-smoke.mjs`（注册路由数）、`.test/artifact-check.mjs`
+  （产物自检）、`.test/live-data-probe.ts`（用真实 `~/.dsh` 只读跑 `list`/`plan`，需先用 esbuild 打成 mjs）。
+  `vitest.config.ts` 里额外把 `@deepseek-ai/dsh-client-ui-primitives` 指到 `.test/primitives-stub.tsx`：
+  官方 UI 包是 host-provided（构建期 external、本地未安装），否则组件渲染测试会 `Cannot find package`。
 - 产物只有 `lib/index.js`（ESM host）、`lib/client.js`（ModuleLoader CJS client + id `dsh-mcp-studio`）与
   `lib/restart-helper.js`（**独立进程**的重启助手：拉起它的 Host 随后会被 taskkill，内联进主 bundle 就会一起消失，
   所以它是第三个 esbuild 入口，host 侧按固定文件名定位）。

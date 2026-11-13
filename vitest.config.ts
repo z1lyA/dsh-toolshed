@@ -17,6 +17,9 @@ export default defineConfig({
       { find: 'dsh-tauri/client', replacement: bridge('./src/bridge/tauri-client.ts') },
       { find: 'dsh-tauri-ui/client', replacement: bridge('./src/bridge/tauri-ui.ts') },
       { find: 'dsh-tauri', replacement: bridge('./src/bridge/tauri-host.ts') },
+      // 官方 UI 包是 host-provided（构建期 external），本地没有安装：测试里换成最小替身，
+      // 否则渲染 Button / Tag / Modal 的组件树会直接 `Cannot find package`。
+      { find: '@deepseek-ai/dsh-client-ui-primitives', replacement: bridge('./.test/primitives-stub.tsx') },
     ],
   },
   test: {
