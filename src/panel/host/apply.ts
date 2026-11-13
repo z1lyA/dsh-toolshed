@@ -67,70 +67,90 @@ function startProvider(remountProvider: () => Promise<void>): () => void {
  *
  * 插件在 Host 启动时激活，早于浏览器打开任何会话，所以在这里执行队列，并让开启动路径
  * （`setTimeout` + `ctx.effect` 的 dispose 都能取消它）。
+ *
+ * 整段用 try/catch 兜住：这里是**附加能力**，任何一个 cordis 组合差异都不该让整个面板
+ * （含 MCP / 技能）一起挂不上——失败时退化成「队列等下次启动再说」，页面仍能手动取消。
  */
 function sweepPendingOnBoot(ctx: HostContext, archive: ArchiveAdmin): void {
   const hostCtx = ctx as unknown as HostContext & { inject: (names: string[], callback: (ready: any) => void) => void }
-  hostCtx.inject(['workspaceRegistry', 'sessionPersistence'], (ready: any) => {
-    ready.effect(() => {
-      let disposed = false
-      const timer = setTimeout(() => {
-        if (disposed)
-          return
-        archive.sweepPending().then((summary) => {
-          try {
-            if ((summary?.totals?.queued ?? 0) > 0) {
-              ctx.logger?.info?.(
-                `[dsh-mcp-studio] pending deletions: queued=${summary.totals.queued} deleted=${summary.totals.deleted} `
-                + `kept=${summary.totals.kept} dropped=${summary.totals.dropped} freed=${summary.totals.freedBytes}`,
-              )
+  try {
+    hostCtx.inject(['workspaceRegistry', 'sessionPersistence'], (ready: any) => {
+      ready.effect(() => {
+        let disposed = false
+        const timer = setTimeout(() => {
+          if (disposed)
+            return
+          archive.sweepPending().then((summary) => {
+            try {
+              if ((summary?.totals?.queued ?? 0) > 0) {
+                ctx.logger?.info?.(
+                  `[dsh-mcp-studio] pending deletions: queued=${summary.totals.queued} deleted=${summary.totals.deleted} `
+                  + `kept=${summary.totals.kept} dropped=${summary.totals.dropped} freed=${summary.totals.freedBytes}`,
+                )
+              }
             }
-          }
-          catch {
-            /* 日志失败绝不能影响清扫 */
-          }
-        }).catch((error) => {
-          try {
-            ctx.logger?.warn?.(`[dsh-mcp-studio] pending deletion sweep failed: ${error instanceof Error ? error.message : String(error)}`)
-          }
-          catch {
-            /* 同上 */
-          }
-        })
-      }, 500)
-      return () => {
-        disposed = true
-        clearTimeout(timer)
-      }
-    }, 'dsh-mcp-studio: pending sweep')
-  })
+            catch {
+              /* 日志失败绝不能影响清扫 */
+            }
+          }).catch((error) => {
+            try {
+              ctx.logger?.warn?.(`[dsh-mcp-studio] pending deletion sweep failed: ${error instanceof Error ? error.message : String(error)}`)
+            }
+            catch {
+              /* 同上 */
+            }
+          })
+        }, 500)
+        return () => {
+          disposed = true
+          clearTimeout(timer)
+        }
+      }, 'dsh-mcp-studio: pending sweep')
+    })
+  }
+  catch (error) {
+    try {
+      ctx.logger?.warn?.(`[dsh-mcp-studio] pending sweep not mounted: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    catch {}
+  }
 }
 
 /**
  * 取消归档要立刻撤掉待删除意图——包括在原生侧栏菜单或另一个标签页里取消。
  *
  * 归档集合在 workspace 域的全局单例里（`table === ''`），所以只对那一条变更反应。
+ * 同样整段兜住：监听装不上只是「队列清理慢一点」，不该影响面板其它 tab。
  */
 function prunePendingOnUnarchive(ctx: HostContext, archive: ArchiveAdmin): void {
   const hostCtx = ctx as unknown as HostContext & { inject: (names: string[], callback: (ready: any) => void) => void }
-  hostCtx.inject(['workspaceRegistry'], (ready: any) => {
-    ready.effect(() => {
-      const off = ready.on('domain/changed', (change: any) => {
-        if (change === null || typeof change !== 'object')
-          return
-        if (change.domain !== 'workspace')
-          return
-        if (change.table !== '')
-          return
-        archive.schedulePrune()
-      })
-      return () => {
-        try {
-          off()
+  try {
+    hostCtx.inject(['workspaceRegistry'], (ready: any) => {
+      ready.effect(() => {
+        const off = ready.on('domain/changed', (change: any) => {
+          if (change === null || typeof change !== 'object')
+            return
+          if (change.domain !== 'workspace')
+            return
+          if (change.table !== '')
+            return
+          archive.schedulePrune()
+        })
+        return () => {
+          try {
+            off()
+          }
+          catch {
+            /* 已释放 */
+          }
         }
-        catch {
-          /* 已释放 */
-        }
-      }
-    }, 'dsh-mcp-studio: prune pending on workspace change')
-  })
+      }, 'dsh-mcp-studio: prune pending on workspace change')
+    })
+  }
+  catch (error) {
+    try {
+      ctx.logger?.warn?.(`[dsh-mcp-studio] workspace-change prune not mounted: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    catch {}
+  }
 }
