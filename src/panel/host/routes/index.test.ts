@@ -321,19 +321,29 @@ describe('能力管理器路由声明', () => {
     dispose()
   })
 
-  it('pOST /host/restart 拒绝无 Origin 或带转发痕迹的请求（403，不触达进程控制）', async () => {
+  it('pOST /host/restart 不再额外要求 Origin 同源（桌面代理常不带 Origin），边界由框架闸门承担', async () => {
     const { base, dispose } = await start()
 
+    // 没有 Origin、或经代理带了转发头：都应该到达 handler（这里是「非桌面宿主」→ 503），
+    // 而不是被手写判据 403 掉——2.0.1 修的就是这个「按钮永远点不动」。
     const noOrigin = await fetch(`${base}${P}/host/restart`, { method: 'POST' })
-    expect(noOrigin.status).toBe(403)
-    expect(await noOrigin.json()).toEqual({ error: 'untrusted origin', code: 'forbidden' })
+    expect(noOrigin.status).toBe(503)
+    expect(await noOrigin.json()).toMatchObject({ code: 'restart-unavailable' })
 
     const forwarded = await fetch(`${base}${P}/host/restart`, {
       method: 'POST',
       headers: { 'origin': base, 'x-forwarded-for': '127.0.0.1' },
     })
-    expect(forwarded.status).toBe(403)
-    expect(await forwarded.json()).toEqual({ error: 'untrusted origin', code: 'forbidden' })
+    expect(forwarded.status).toBe(503)
+    expect(await forwarded.json()).toMatchObject({ code: 'restart-unavailable' })
+
+    // 跨源请求仍由框架闸门挡下（这条边界没有因为删掉手写判据而变松）。
+    const crossOrigin = await fetch(`${base}${P}/host/restart`, {
+      method: 'POST',
+      headers: { 'origin': 'http://evil.example' },
+    })
+    expect(crossOrigin.status).toBe(403)
+    expect(await crossOrigin.json()).toEqual({ error: 'cross-origin-request' })
 
     dispose()
   })

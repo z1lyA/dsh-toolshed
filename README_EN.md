@@ -178,7 +178,7 @@ pnpm test          # node scripts/run-tests.mjs (vitest; see below)
 | --- | --- | --- |
 | `origin` | `z1lyA/dsh-toolshed` | this project (standalone) |
 | `upstream` | `functy23/dsh-mcp-studio` | read-only reference — cherry-pick upstream framework fixes |
-| `fork-archive` | `z1lyA/dsh-toolshed-fork` | pre-detach fork backup; delete once you no longer need it |
+| `fork-archive` | `z1lyA/dsh-toolshed-fork` | pre-detach backup, **archived (read-only)**; delete it on GitHub once you no longer need it (deleting needs the `delete_repo` scope: `gh auth refresh -s delete_repo`, or Settings → Danger Zone) |
 
 > esbuild is used deliberately: the DSH runtime's Node enforces macOS library validation, and
 > rollup/rolldown `.node` bindings fail to dlopen (see [AGENTS.md](AGENTS.md)).

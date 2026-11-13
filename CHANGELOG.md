@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.0.1] — 2026-11-13
+
+### Fixed
+
+- **点「重启服务」总是报 `untrusted origin`（按钮等于不可用）**。1.x 在 `POST /api/host/restart` 上手写了一层
+  「`Origin` 必须与 `Host` 同源、且拒绝任何 `forwarded` / `x-forwarded-for` / `x-real-ip`」的判据；而桌面壳的
+  请求是经内部代理转发的，可能不带 `Origin`、或带上转发头，于是**每次点击都被 403**，弹窗里只剩一句看不懂的
+  英文。现在删掉这层重复判据，信任边界完全交给 `defineRoutes` 的内建闸门（变更方法仅本机回环、
+  `Origin` 与 `Host` 不符即 403、`connection.requestRejection` 做浏览器认证）——与 `DELETE /api/archive`
+  等破坏性路由同一套；跨源请求仍被挡住（有回归测试覆盖）。
+- 重启失败的反馈改成看得懂的话：被活跃工作挡住时用一句话概述原因；宿主明确拒绝时直接显示它的说明；
+  其它错误附带 `code` / `HTTP 状态`，方便贴到 issue 里定位。
+
+### Changed
+
+- 脱离 fork 身份：项目主仓迁移为独立仓库 `z1lyA/dsh-toolshed`（`origin`），保留 `upstream`（functy23）用于
+  cherry-pick 上游修复；改名前的 fork 已归档为 `z1lyA/dsh-toolshed-fork`（可删）。
+
 ## [2.0.0] — 2026-11-13
 
 **更名，独立立项：`dsh-mcp-studio` → `dsh-toolshed`。**

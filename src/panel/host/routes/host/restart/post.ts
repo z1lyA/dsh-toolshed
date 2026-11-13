@@ -5,28 +5,15 @@ import { failure } from '../../failure'
 /**
  * POST /api/host/restart — 进程级重启桌面应用。
  *
- * 这一层比 `defineRoutes` 内建的闸门更严：要求 Origin 与 Host 同源，并拒绝任何带
- * `forwarded` / `x-forwarded-for` / `x-real-ip` 的请求——重启是不可撤销动作，反代链不认。
+ * 信任边界交给 `defineRoutes` 的内建闸门：变更方法仅本机回环、`Origin` 与 `Host` 不符即 403、
+ * `connection.requestRejection` 做浏览器认证——和 `DELETE /api/archive` 这类破坏性路由同一套。
+ *
+ * 为什么删掉了 1.x 里那段手写的「Origin 必须同源 + 拒绝 forwarded 头」检查（2.0.1）：
+ * 桌面壳的请求是经内部代理转发的，可能**不带 Origin**、或带 `x-forwarded-for`，于是每次点重启
+ * 都被判 `403 untrusted origin`——用户只看到一句看不懂的英文，按钮等于永远不可用。
+ * 那段判据挡住的正是合法请求，而框架闸门已经覆盖同样的攻击面。
  */
 export default defineEventHandler(async (event): Promise<RestartLaunchResponse | { error: string, code?: string }> => {
-  const headers = event.req.headers
-  const origin = headers.get('origin')
-  const host = headers.get('host')
-  let sameOrigin = false
-  if (origin !== null && host !== null) {
-    try {
-      const parsed = new URL(origin)
-      sameOrigin = (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.host === host
-    }
-    catch {
-      sameOrigin = false
-    }
-  }
-  const forwarded = headers.has('forwarded') || headers.has('x-forwarded-for') || headers.has('x-real-ip')
-  if (!sameOrigin || forwarded) {
-    event.res.status = 403
-    return { error: 'untrusted origin', code: 'forbidden' }
-  }
   const deps = dshRouteDepsOf<ExtensionRouteDeps>(event)!
   try {
     return await deps.restart.execute()

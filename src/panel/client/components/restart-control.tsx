@@ -73,6 +73,26 @@ export function RestartControl({ t }: RestartControlProps): ReactElement {
         ? t('serviceOnlyDesktop')
         : canRestart ? t('serviceReady') : blockedSummary()
 
+  /**
+   * 失败原因要能直接指导下一步，而不是甩一句原始英文错误。
+   *
+   * - `restart-blocked`：用同一句话概述"被哪些工作挡住"（与按钮的 tooltip 一致）；
+   * - `restart-unavailable`：宿主明确拒绝（不在桌面应用 / 助手文件缺失 / 路径含 `%`），
+   *   消息本身就是可执行的说明，前面加一句"无法重启"；
+   * - 其它：保留 `code`/状态码，方便贴到 issue 里定位。
+   */
+  const failureText = (cause: unknown): string => {
+    if (cause instanceof ApiError) {
+      if (cause.code === 'restart-blocked')
+        return blockedSummary() || t('restartBlocked')
+      if (cause.code === 'restart-unavailable')
+        return `${t('restartBlocked')}: ${cause.message}`
+      const code = cause.code ?? `HTTP ${cause.status}`
+      return `${t('failed')}: ${cause.message} (${code})`
+    }
+    return `${t('failed')}: ${cause instanceof Error ? cause.message : String(cause)}`
+  }
+
   const doRestart = (): void => {
     setError(null)
     setBusy(true)
@@ -89,7 +109,7 @@ export function RestartControl({ t }: RestartControlProps): ReactElement {
         if (!mounted.current)
           return
         setBusy(false)
-        setError(cause instanceof ApiError ? cause.message : `${t('failed')}: ${cause instanceof Error ? cause.message : String(cause)}`)
+        setError(failureText(cause))
         load()
       },
     )
