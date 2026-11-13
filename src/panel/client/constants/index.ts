@@ -4,7 +4,6 @@ import { PLUGIN_ID } from '../../shared/constants'
 export { PLUGIN_ID } from '../../shared/constants'
 
 export const CONVERSATION_INPUT_LEFT_SLOT = 'conversation.input.left'
-export const MARKET_SERVICE_NAME = 'market'
 export const PANEL_ID = PLUGIN_ID
 export const PANEL_ACTION_ORDER = 20
 export const INPUT_PREFILL_ID = `${PLUGIN_ID}.skill-prefill`

@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.2.0] — 2026-11-13
+
+### Changed
+
+- **取消「服务」页，重启收进标签页行最右侧**。面板只保留 技能 / MCP / 已归档 三个 tab；标签页那一行的右端常驻
+  「刷新 + 重启服务」控件（`components/restart-control.tsx`）。**不能重启时按钮禁用**，原因直接写在 `title` 上
+  （悬停即见：有运行中的会话 / 排队输入 / 后台任务，或当前不是桌面应用）；左侧刷新按钮重新拉
+  `GET /api/host/restart` 重新判断。点击重启仍需一次确认弹窗（它会中断正在跑的回合），宿主恢复后页面自动重载。
+- **移除插件市场收编**。删掉 `service/market.ts`、`components/market-tab.tsx` 与「撤下 dshmarket 设置页入口」的那段
+  inject；面板不再有「市场」tab——市场是独立插件，装了它就用它自己的设置页入口。
+- 「已归档」页的「待删除」提示不再跳转页面，改为提示右上角「重启服务」。
+
+### Removed
+
+- `components/service-tab.tsx`、`components/service-tab.types.ts`、`components/market-tab.tsx`、
+  `service/market.ts`、`service/market.types.ts`、`service/market.test.ts`，以及常量 `MARKET_SERVICE_NAME`。
+- 已归档 / MCP 两页的 `onNavigate` 参数（没有「服务」页可跳了）。
+
 ## [1.1.0] — 2026-11-13
 
 ### Added

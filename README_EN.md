@@ -78,9 +78,10 @@ killed right after, so inlining it into the main bundle would take it down too).
    `find-skills` through `files: ["skills"]`; this repo restores both, byte-identical to the upstream release
    artifact. Without them the prefilled `/skill-creator` is plain text — no highlight, no click-through, and nothing
    loads on send.
-6. **Market tab (issue #1)** — upstream only embedded `dshmarket` inside the Tauri iframe (`window.parent !== window`).
-   This plugin *is* the extension-panel host, so Web / Desktop embed the market tab whenever `render` is published
-   and retract the duplicate settings-page entry.
+6. **Plugin-market embedding removed (1.2.0)** — upstream only embedded `dshmarket` inside the Tauri iframe
+   (`window.parent !== window`); 1.0.5 made it appear whenever `render` was published. Since 1.2.0 the whole
+   integration is **gone**: the market is a separate, low-frequency plugin and does not deserve a tab here, so an
+   installed `dshmarket` simply keeps its own settings-page entry.
 
 Tauri-only code (invoke / listen / iframe bridges) stays vendored but unreferenced: the bundle never touches `window.__TAURI__`.
 
@@ -113,14 +114,20 @@ Restart DSH once after a host-half update, then hard-refresh the browser.
 
 ## 🧭 UI
 
-The sidebar shows **扩展** (Puzzle icon) with the original panel — five tabs since 1.1.0:
-**MCP** (list, add/edit, enable/disable, connection check, copy, import scanning, JSON export/import; a write shows a
-"restart needed" banner that links to the Service tab),
-**Skills** (grouped list, search, enable/disable, view/edit SKILL.md, create — opens a new conversation in the
-current workspace with `/skill-creator` prefilled — delete, open folder, refresh),
-**Archived** (see below),
-**Service** (process-level restart, see below),
-**plugin market** (embeds [`dshmarket`](https://github.com/dsh-market/dsh-market) when it publishes `render`, and hides the duplicate settings-page entry; no tab if the market is missing or too old).
+The sidebar shows **扩展** (Puzzle icon) with three tabs, and the **top-right corner of the tab row** holds
+refresh + restart:
+
+- **Skills** (grouped list, search, enable/disable, view/edit SKILL.md, create — opens a new conversation in the
+  current workspace with `/skill-creator` prefilled — delete, open folder, refresh),
+- **MCP** (list, add/edit, enable/disable, connection check, copy, import scanning, JSON export/import; a write shows
+  a "restart needed" banner),
+- **Archived** (see below),
+- **restart control (top-right)**: refresh (re-check whether a restart is possible) + restart service.
+  When a restart is not possible the button is disabled and its tooltip lists the reason — running sessions, queued
+  input, background jobs, or "not the desktop app".
+
+> Since 1.2.0 the **plugin market is no longer embedded**: if `dshmarket` is installed it keeps its own settings-page
+> entry; this panel only carries Skills / MCP / Archived.
 
 ### 🗂 Archived sessions
 
@@ -137,17 +144,18 @@ DSH can archive and unarchive but has **no delete API**. This tab adds it, with 
   the upload index proves nothing else uses them; an incomplete scan removes **nothing** and reports why.
 - Unarchiving cancels the pending deletion immediately (workspace `domain/changed` listener + a sweep on every read).
 
-### 🔄 Restart on the Service tab
+### 🔄 Restart control (top-right)
 
 A process-level restart (DSH exposes no restart API to plugins): the host inspects running turns, queued input and
-running/stopping jobs (archived sessions exempt), refuses with the blocking list when there is active work, otherwise
-writes a restart plan, spawns the detached helper `lib/restart-helper.js`, replies, then `taskkill /T`s the current
-Electron process tree; the helper waits for the old process to exit and relaunches the same executable as a GUI app.
-Log: `$DSH_HOME/session-admin/restart.log`. **Desktop only** (detected via `ELECTRON_RUN_AS_NODE=1` + an argv entry
-containing `dsh-desktop-host` + a real parent process); Web / CLI report it as unavailable.
+running/stopping jobs (archived sessions exempt); when there is active work the button is **disabled** and its
+tooltip lists the blockers. Otherwise one click + one confirmation writes a restart plan, spawns the detached helper
+`lib/restart-helper.js`, replies, then `taskkill /T`s the current Electron process tree; the helper waits for the old
+process to exit and relaunches the same executable as a GUI app, and the page reloads once the host is back.
+Log: `$DSH_HOME/session-admin/restart.log`. The refresh button re-reads `GET /api/host/restart`, so the control
+re-enables as soon as the blocking work is gone. **Desktop only** (detected via `ELECTRON_RUN_AS_NODE=1` + an argv
+entry containing `dsh-desktop-host` + a real parent process); Web / CLI report it as unavailable.
 
 <p align="center">
-  <img src="assets/screenshot-market.png" alt="Extension panel · Market" width="720" /><br/>
   <img src="assets/screenshot-skills.png" alt="Extension panel · Skills" width="720" /><br/>
   <img src="assets/screenshot-mcp.png" alt="Extension panel · MCP" width="720" />
 </p>
@@ -177,8 +185,9 @@ pnpm test          # node scripts/run-tests.mjs (vitest; see below)
   the panel, the framework bridge and the UI components in this repository are their original work,
   vendored here. Please support the upstream project and its Tauri desktop edition.
 - **[z1lyA/dsh-session-admin](https://github.com/z1lyA/dsh-session-admin)** — the 1.1.0 "Archived" tab and the
-  Service-tab restart are ported from that plugin (deletion rules, pending queue, desktop process-level restart);
-  the MIT licence and our changes are recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+  Service-tab restart (+ the top-right restart control) are ported from that plugin (deletion rules, pending queue,
+  desktop process-level restart); the MIT licence and our changes are recorded in
+  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 - Official plugin docs: <https://deepseek-harness.github.io/deepseek-harness/develop/basic/>
 
 ## 📄 License

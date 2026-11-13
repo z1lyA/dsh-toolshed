@@ -10,7 +10,7 @@ import { McpEditorForm } from './mcp-editor-form'
 import { McpImportDialog } from './mcp-import-dialog'
 import { mapToPairs, parseMcpJson, parsePairs } from './mcp-tab.utils'
 
-export function McpTab({ t, onNavigate }: McpTabProps): ReactElement {
+export function McpTab({ t }: McpTabProps): ReactElement {
   const [servers, setServers] = useState<McpRow[] | null>(null)
   const [editor, setEditor] = useState<McpEditorState | null>(null)
   const [confirmId, setConfirmId] = useState<string | null>(null)
@@ -258,19 +258,14 @@ export function McpTab({ t, onNavigate }: McpTabProps): ReactElement {
   /**
    * 「配置已写入，需要重启」的常驻提示。
    *
-   * 重启入口已经独立成「服务」tab（宿主级动作，且要能列出被挡住的原因），这里只留提示
-   * 与一个跳转，不再提供第二个重启按钮。
+   * 重启控件在面板右上角（标签页那一行的最右侧），这里只说明去哪儿点，不再提供第二个入口。
    */
   const restartBanner = (
     <div className="dshp-extension__banner" data-kind="info" role="status">
       <StateDot state="ongoing" size={10} />
       <div className="dshp-extension__banner-body">
         <span>{t('restartNeeded')}</span>
-        <span className="dshp-extension__banner-hint">
-          {t('restartGoServiceHint')}
-          {' '}
-          <Button variant="outline" size="sm" onClick={() => onNavigate('service')}>{t('goService')}</Button>
-        </span>
+        <span className="dshp-extension__banner-hint">{t('restartEntryInHeader')}</span>
       </div>
     </div>
   )

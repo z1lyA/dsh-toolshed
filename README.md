@@ -48,7 +48,7 @@ src/                          ← 活代码：从产物入口走得到的部分
 │   │                          / archive / pending-deletions / session-paths / session-attachments / restart-helper）、
 │   │                         routes（mcp / skill / import / roots / archive / host）
 │   ├── client/               components（mcp-tab / mcp-editor-form / mcp-import-dialog / skills-tab
-│   │                          / archive-tab / service-tab / extension-panel / market-tab）、
+│   │                          / archive-tab / restart-control / extension-panel）、
 │   │                         register（extension-panel / skill-creator-prefill / styles）、locales、styles、store、apis
 │   └── shared/
 ├── vendor/
@@ -86,7 +86,9 @@ skills/                       ← 随包发布的技能（host 半按 package.js
    认成 `/名字`。上游用 `files: ["skills"]` 打包了 anthropics/skills 的 `skill-creator` 与 vercel-labs/skills 的
    `find-skills`，本仓库按上游发布产物逐字节补回；缺了它，输入框里预填的 `/skill-creator` 就是普通文本：
    不高亮、点不开、发送后也不会加载任何技能。
-6. **插件市场 tab（Issue #1）**：上游用 iframe（`window.parent !== window`）才收编 `dshmarket`，那是给 Tauri 壳用的。本插件就是扩展面板宿主，Web / Desktop 上只要 `dshmarket` 发布了 `render` 就嵌进「市场」tab，并撤下设置页重复入口。
+6. **插件市场收编已移除（1.2.0）**：上游用 iframe（`window.parent !== window`）才收编 `dshmarket`，那是给 Tauri 壳用的；
+   1.0.5 起本插件改成「只要 `dshmarket` 发布 `render` 就嵌进市场 tab」，1.2.0 起**整段移除**——
+   市场是独立插件、低频，占用面板标签页不划算；装了 `dshmarket` 就继续用它的设置页入口。
 
 Tauri 专属部分（`dsh-tauri/client` 的 invoke / listen / iframe 消息桥、桌面侧边栏注入）**保留在 vendor 里但不被引用**，
 所以产物不会访问 `window.__TAURI__`，在 Web 与 Desktop 上同样工作。
@@ -128,15 +130,16 @@ pnpm install --dir ~/.dsh/profiles/<profile>
 
 ## 🧭 界面
 
-装好后侧边栏出现 **扩展**（Puzzle 图标），点开就是原来的面板，1.1.0 起是五个 tab：
+装好后侧边栏出现 **扩展**（Puzzle 图标），点开是三个 tab，标签页那一行的**最右侧**是刷新 + 重启服务：
 
 | Tab | 能力 |
 | --- | --- |
-| **MCP** | 服务器列表（项目级 / 全局、启用状态、传输方式、URL / 命令）、新增与编辑表单、启用 / 停用、连接检查、复制片段、从其他 DSH profile 或 Claude / Cursor / Windsurf / VS Code 配置**导入扫描**、JSON 导出导入；写入后提示「需要重启」，重启动作在「服务」页 |
-| **Skills** | 技能列表（按来源分组）、搜索、启用 / 停用、查看与编辑 SKILL.md、新建技能（在当前工作区开一条新对话并预填 `/skill-creator`）、删除、打开目录、刷新 |
+| **技能** | 技能列表（按来源分组）、搜索、启用 / 停用、查看与编辑 SKILL.md、新建技能（在当前工作区开一条新对话并预填 `/skill-creator`）、删除、打开目录、刷新 |
+| **MCP** | 服务器列表（项目级 / 全局、启用状态、传输方式、URL / 命令）、新增与编辑表单、启用 / 停用、连接检查、复制片段、从其他 DSH profile 或 Claude / Cursor / Windsurf / VS Code 配置**导入扫描**、JSON 导出导入；写入后提示「需要重启」 |
 | **已归档** | 已归档会话列表（工作区、精确磁盘占用、文件数、子代理数）、全选 / 半选 / 单选、批量**取消归档**、批量**永久删除**（dry-run 计划 → 确认 → 执行）、**待删除**队列与取消 |
-| **服务** | 进程级重启：可重启状态、被挡住的原因（运行中会话 / 排队输入 / 后台任务）、重启按钮、重启日志路径 |
-| **插件市场** | 已安装 [`dshmarket`](https://github.com/dsh-market/dsh-market) 且其客户端提供 `render` 时，把市场面板嵌进本 tab，并藏掉设置页里的重复入口；未安装或旧版没有 `render` 时不出现该 tab，设置页入口保留 |
+| **右上角重启控件** | 刷新（重新判断能否重启）+ 重启服务（进程级）。不可重启时按钮禁用，鼠标悬停即显示原因：有运行中的会话 / 排队输入 / 后台任务，或当前不是桌面应用 |
+
+> 1.2.0 起**不再收编插件市场**：即使装了 `dshmarket`，也由它自己的设置页入口提供；本面板只保留技能 / MCP / 已归档。
 
 技能启停沿用上游策略：写 SKILL.md 的 `user-invocable` 策略位，不新增旁路状态。
 
@@ -157,19 +160,20 @@ DSH 只提供归档 / 取消归档，**没有删除会话的接口**。这个 ta
 - 已知限制：删除后本页会刷新，但原生侧栏的会话列表可能残留到下一次页面刷新 / 重启；
   多开实例时 JSON 存储域是「最后写入者获胜」，建议单实例操作。
 
-### 🔄 服务页重启
+### 🔄 右上角重启控件
 
 重启是**进程级**实现（DSH 没有给插件暴露重启接口）：先检查工作区里运行中的回合、排队中的输入、
-running / stopping 的后台 job（**已归档会话豁免**），有交叉就拒绝并列出原因；无交叉时写重启计划、
-拉起脱离进程树的助手 `lib/restart-helper.js`、HTTP 回复后 `taskkill /T` 当前 Electron 进程树，
-助手等旧进程退出、单实例锁释放后以 GUI 方式重拉同一个可执行文件。日志在
+running / stopping 的后台 job（**已归档会话豁免**），有交叉就把按钮**禁用**并在 `title` 里列明原因
+（悬停即见）；无交叉时点击 → 一次确认弹窗 → 写重启计划、拉起脱离进程树的助手
+`lib/restart-helper.js`、HTTP 回复后 `taskkill /T` 当前 Electron 进程树，助手等旧进程退出、
+单实例锁释放后以 GUI 方式重拉同一个可执行文件，页面在宿主恢复后自动重载。日志在
 `$DSH_HOME/session-admin/restart.log`。
 
+左侧的刷新按钮会重新拉一次 `GET /api/host/restart`：结束掉阻塞的会话/任务后点一下，按钮就恢复可用。
 **只在 DSH 桌面应用里可用**（判据：`ELECTRON_RUN_AS_NODE=1` + argv 含 `dsh-desktop-host` + 有父进程）；
-Web / CLI 会如实显示「不可用」并提示手动重启。重启会中断当前回合，请先确认没有正在进行的对话。
+Web / CLI 会如实显示「不可用」。重启会中断当前回合，请先确认没有正在进行的对话。
 
 <p align="center">
-  <img src="assets/screenshot-market.png" alt="扩展面板 · 市场" width="720" /><br/>
   <img src="assets/screenshot-skills.png" alt="扩展面板 · 技能" width="720" /><br/>
   <img src="assets/screenshot-mcp.png" alt="扩展面板 · MCP" width="720" />
 </p>
@@ -214,7 +218,7 @@ pnpm test          # node scripts/run-tests.mjs（vitest；见下方说明）
 - **[deepseek-harness-desktop](https://github.com/dsh-tauri-desk/deepseek-harness-desktop)**（Tauri 桌面版，作者 Hairyf 与贡献者）——
   本项目搬运的 `dsh-tauri-panel-extension`、`dsh-tauri`、`dsh-tauri-ui` 三个包全部来自该仓库，
   **界面、交互与 host 服务逻辑均为其原始实现**；没有它就没有这个插件。请优先支持上游与 Tauri 桌面版。
-- **[z1lyA/dsh-session-admin](https://github.com/z1lyA/dsh-session-admin)** —— 1.1.0 的「已归档」tab 与「服务」页重启
+- **[z1lyA/dsh-session-admin](https://github.com/z1lyA/dsh-session-admin)** —— 「已归档」tab 与面板右上角的进程级重启
   移植自该插件（含删除边界规则、待删除队列与桌面进程级重启）；原始 MIT 许可与改动说明见
   [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 - 官方插件开发文档：<https://deepseek-harness.github.io/deepseek-harness/develop/basic/>

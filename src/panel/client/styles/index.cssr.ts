@@ -208,6 +208,19 @@ export default b('extension', [
     c('& a', { color: business }),
   ]),
   e('tab-panel', { minWidth: '0', paddingTop: '2px' }),
+  // 标签页与重启控件同一行（重启不占整页）：左侧 SegmentedControl，右侧刷新 + 重启服务。
+  e('head-row', {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    flexWrap: 'wrap',
+  }),
+  e('head-actions', {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    marginLeft: 'auto',
+  }),
   // 已归档明细是「一行一条会话」的清单，不是卡片网格：内容宽度也不一样（id、体积、徽标）。
   e('sessions', {
     display: 'flex',

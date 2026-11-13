@@ -31,7 +31,7 @@ function shortId(id: string): string {
  *  - live 会话不会被强删，只登记为「待删除」，下次启动 DSH 时执行；
  *  - 有排队条目时只提示「去服务页重启」，不在这一页再放一个重启按钮。
  */
-export function ArchiveTab({ t, onNavigate }: ArchiveTabProps): ReactElement {
+export function ArchiveTab({ t }: ArchiveTabProps): ReactElement {
   const [rows, setRows] = useState<ArchivedSessionView[] | null>(null)
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set())
   const [busy, setBusy] = useState(false)
@@ -234,9 +234,6 @@ export function ArchiveTab({ t, onNavigate }: ArchiveTabProps): ReactElement {
           <StateDot state="ongoing" size={10} />
           <div className="dshp-extension__banner-body">
             <span>{t('archivePendingHint')}</span>
-            <span className="dshp-extension__banner-hint">
-              <Button variant="outline" size="sm" onClick={() => onNavigate('service')}>{t('goService')}</Button>
-            </span>
           </div>
         </div>
       )}

@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest'
 import { locale } from '../locales'
 import { ArchiveTab } from './archive-tab'
 import { ExtensionPanel } from './extension-panel'
-import { ServiceTab } from './service-tab'
+import { RestartControl } from './restart-control'
 
 /**
- * tab 行与新增两页的渲染冒烟。
+ * tab 行与各页的渲染冒烟。
  *
  * 为什么值得单独测：esbuild 只做语法/模块解析，而 `pnpm typecheck` 在缺宿主类型的机器上跑不了，
  * 于是「Button 的 variant 写错、图标没从 barrel 导出、locale 键拼错」这类问题只能等到真机硬刷新
@@ -19,32 +19,45 @@ import { ServiceTab } from './service-tab'
  */
 const t = locale.text
 
-describe('扩展面板 tab 行', () => {
-  it('四个常驻 tab 都在，市场缺席时不出现「市场」', () => {
-    const html = renderToStaticMarkup(<ExtensionPanel createSkill={async () => {}} market={undefined} />)
+describe('扩展面板 tag 行', () => {
+  it('三个标签页都在，重启控件在同一行的右侧（不再单开「服务」页）', () => {
+    const html = renderToStaticMarkup(<ExtensionPanel createSkill={async () => {}} />)
 
     expect(html).toContain('role="tablist"')
-    for (const key of ['skillsTab', 'mcpTab', 'archiveTab', 'serviceTab'] as const)
+    for (const key of ['skillsTab', 'mcpTab', 'archiveTab'] as const)
       expect(html, key).toContain(t(key))
-    expect(html).not.toContain(t('marketTab'))
+    expect(html).not.toContain(t('serviceTab'))
 
-    // ARIA 约定：tab 按钮 id 与面板 id 共用一个后缀；首屏只挂载当前页的面板
-    // （「访问过才常驻挂载」的 visited 策略 → 初始只有 skills 一个 panel div）。
-    expect(html).toContain('-archive"')
-    expect(html).toContain('-service"')
-    expect(html).toContain('-skills-panel"')
+    // 重启控件：刷新 + 重启服务，且落在 tablist 之后（同一行、最右侧）
+    expect(html).toContain('dshp-extension__head-actions')
+    expect(html).toContain(t('restartNow'))
+    expect(html.indexOf('role="tablist"')).toBeLessThan(html.indexOf('dshp-extension__head-actions'))
+
+    // 首屏只挂载当前页的面板（visited 策略）
     expect(html.split('dshp-extension__tab-panel').length - 1).toBe(1)
   })
 
   it('没有未翻译的键泄漏成 undefined', () => {
-    const html = renderToStaticMarkup(<ExtensionPanel createSkill={async () => {}} market={undefined} />)
+    const html = renderToStaticMarkup(<ExtensionPanel createSkill={async () => {}} />)
+    expect(html).not.toContain('undefined')
+  })
+})
+
+describe('重启控件', () => {
+  it('状态未知时（SSR 不跑 effect）如实渲染禁用态，并把「载入中」写进 title', () => {
+    const html = renderToStaticMarkup(<RestartControl t={t} />)
+
+    expect(html).toContain(t('restartNow'))
+    // 不可重启时按钮禁用、原因挂在 title 上（鼠标悬停即可看到，不用点开）
+    expect(html).toContain(t('loading'))
+    expect(html).toContain('data-disabled="true"')
     expect(html).not.toContain('undefined')
   })
 })
 
 describe('已归档页', () => {
   it('载入态就有标题、全选与批量动作', () => {
-    const html = renderToStaticMarkup(<ArchiveTab t={t} onNavigate={() => {}} />)
+    const html = renderToStaticMarkup(<ArchiveTab t={t} />)
 
     expect(html).toContain(t('archiveTitle'))
     expect(html).toContain(t('archiveSelectAll'))
@@ -52,19 +65,5 @@ describe('已归档页', () => {
     expect(html).toContain(t('archiveCancelPending'))
     expect(html).toContain(t('loading'))
     expect(html).not.toContain('undefined')
-  })
-})
-
-describe('服务页', () => {
-  it('载入态有标题、重启按钮与日志/形态说明，且没有重复的重启入口', () => {
-    const html = renderToStaticMarkup(<ServiceTab t={t} />)
-
-    expect(html).toContain(t('serviceTitle'))
-    expect(html).toContain(t('serviceIntro'))
-    expect(html).toContain(t('restartNow'))
-    expect(html).toContain(t('loading'))
-    expect(html).not.toContain('undefined')
-    // 服务页只出现一次重启按钮文案（确认没顺手再塞一个入口进来）。
-    expect(html.split(t('restartNow')).length - 1).toBe(1)
   })
 })

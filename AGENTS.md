@@ -103,11 +103,13 @@ host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.
   `lib/restart-helper.js`（**独立进程**的重启助手：拉起它的 Host 随后会被 taskkill，内联进主 bundle 就会一起消失，
   所以它是第三个 esbuild 入口，host 侧按固定文件名定位）。
 - `package.json` 的 `dsh.client.inject` 必须列出用到的官方客户端模块（layout / primitives / renderer / locale）。
-- **面板有五个 tab**（`client/components/extension-panel.tsx` 的 `rows`）：市场（条件）/ 技能 / MCP / 已归档 / 服务。
-  新 tab 一律**追加在末尾**：`rows[0]` 就是首屏默认页，插到前面会改掉所有人的默认页。tab 之间要跳转时用
-  `render(onNavigate)` 传下去的 `setRequestedId`，不要自己造状态容器。
-- **重启入口只有一个**：`service-tab.tsx`（「服务」页）。MCP 只保留「配置已写入，需要重启」的提示 + 跳转。
-  别再往别的页面塞第二个重启按钮。
+- **面板有三个 tab**（`client/components/extension-panel.tsx` 的 `rows`）：技能 / MCP / 已归档。
+  标签页那一行的**最右侧**是重启控件（`restart-control.tsx`：刷新 + 重启服务）。
+  新 tab 一律**追加在末尾**：`rows[0]` 就是首屏默认页，插到前面会改掉所有人的默认页。
+- **重启入口只有一个**：`restart-control.tsx`（标签页行最右）。不可重启时按钮禁用、原因写在 `title` 上
+  （悬停即见），刷新按钮重新拉 `GET /api/host/restart`。别再单开「服务」页，也别往别的页面塞第二个重启按钮。
+- **插件市场收编已在 1.2.0 移除**（`service/market.ts`、`market-tab.tsx` 已删）：不要再把 `dshmarket`
+  的面板嵌回来，也不要再动它的设置页入口——那是它自己的入口。
 - 会话管理的服务层（`service/archive.ts`、`session-paths.ts`、`session-attachments.ts`、`pending-deletions.ts`）
   是**纯 Node**、不依赖 DSH 服务（靠 `ctx.get` 取），因此可以脱离 DSH 直接单测；它们的线协议类型在
   `service/archive.types.ts`，由 `routes/index.types.ts` 再导出给客户端。队列与重启日志的目录**保持**

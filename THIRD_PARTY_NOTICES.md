@@ -60,7 +60,7 @@ Copyright (c) 2026 deepseek-harness-desktop contributors
 
 ---
 
-## z1lyA/dsh-session-admin（1.1.0 起的「已归档」tab 与「服务」页重启）
+## z1lyA/dsh-session-admin（「已归档」tab 与进程级重启）
 
 - 来源：<https://github.com/z1lyA/dsh-session-admin>（作者即本 fork 的维护者）
 - 许可：MIT（见该仓库 LICENSE）
@@ -91,5 +91,7 @@ Copyright (c) 2026 deepseek-harness-desktop contributors
   `package.json` 的 `files` 同步补 `skills`），见上。
 - **1.1.0**：面板从三个 tab 扩到五个（新增「已归档」与「服务」）；`/host/restart` 的实现被换成本仓库维护者
   自己那套桌面进程级重启（见上一节），构建新增第三个入口 `lib/restart-helper.js`；路由行数 13 → 18。
+- **1.2.0**：取消「服务」页，重启改到标签页行最右侧（`components/restart-control.tsx`）；移除插件市场收编
+  （上游 `dsh-tauri-panel-extension` 的 market tab 代码随 `src/panel` 一起搬运，但本仓库不再启用）。
 
 除上述改动外，界面与 host 逻辑版权归上游作者所有。

@@ -13,7 +13,15 @@ import type { ReactNode } from 'react'
  * `export { … } from` 能通过链接期校验。
  */
 const component = (name: string) => {
-  const Stub = (props: { children?: ReactNode }) => <span data-prim={name}>{props?.children}</span>
+  const Stub = (props: { children?: ReactNode, title?: string, disabled?: boolean }) => (
+    <span
+      data-prim={name}
+      title={props?.title}
+      data-disabled={props?.disabled === true ? 'true' : undefined}
+    >
+      {props?.children}
+    </span>
+  )
   Stub.displayName = `Stub(${name})`
   return Stub
 }

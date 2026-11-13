@@ -1,5 +1,5 @@
 import type { Translate } from '../locales/index.types'
 
-export interface ServiceTabProps {
+export interface RestartControlProps {
   t: Translate
 }

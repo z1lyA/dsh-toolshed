@@ -20,8 +20,6 @@ function createCtx(): {
   const registrations: Array<{ slot: string, options: any, render: any, disposed: boolean }> = []
   const layouts: Array<string | null> = []
   const ctx: any = {
-    // readMarket 靠 reflect 探测市场服务；没有 reflect 就是「未安装」
-    reflect: undefined,
     slots: {
       inject(_name: string, callback: () => unknown) {
         const dispose = callback()
@@ -91,9 +89,12 @@ describe('扩展面板注册链', () => {
 
       expect(html).toContain('dshp-panel-page')
       expect(html).toContain('role="tablist"')
-      for (const key of ['skillsTab', 'mcpTab', 'archiveTab', 'serviceTab'] as const)
+      for (const key of ['skillsTab', 'mcpTab', 'archiveTab'] as const)
         expect(html, key).toContain(locale.text(key))
-      expect(html).not.toContain(locale.text('marketTab'))
+      // 重启控件与标签页同一行、位于其后；不再有独立的「服务」页
+      expect(html).toContain(locale.text('restartNow'))
+      expect(html.indexOf('role="tablist"')).toBeLessThan(html.indexOf(locale.text('restartNow')))
+      expect(html).not.toContain(locale.text('serviceTab'))
     }
     finally {
       dispose()
