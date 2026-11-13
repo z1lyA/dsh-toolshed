@@ -3,9 +3,11 @@ import type { MarketFace } from '../service/market.types'
 import { SegmentedControl } from 'dsh-tauri-ui/client'
 import { useEffect, useId, useState } from 'react'
 import { locale } from '../locales'
+import { ArchiveTab } from './archive-tab'
 import { resolveActiveTab } from './extension-panel.utils'
 import { MarketTab } from './market-tab'
 import { McpTab } from './mcp-tab'
+import { ServiceTab } from './service-tab'
 import { SkillsTab } from './skills-tab'
 
 export interface ExtensionPanelProps {
@@ -17,7 +19,8 @@ export interface ExtensionPanelProps {
 interface ExtensionTab {
   id: string
   label: string
-  render: () => ReactElement
+  /** 标签页可以跳到兄弟页（MCP / 已归档 → 服务），所以拿到切换函数。 */
+  render: (onNavigate: (id: string) => void) => ReactElement
 }
 
 export function ExtensionPanel({ createSkill, market }: ExtensionPanelProps): ReactElement {
@@ -29,7 +32,10 @@ export function ExtensionPanel({ createSkill, market }: ExtensionPanelProps): Re
       ? []
       : [{ id: 'market', label: t('marketTab'), render: () => <MarketTab market={marketFace} /> }]),
     { id: 'skills', label: t('skillsTab'), render: () => <SkillsTab t={t} createSkill={createSkill} /> },
-    { id: 'mcp', label: t('mcpTab'), render: () => <McpTab t={t} /> },
+    { id: 'mcp', label: t('mcpTab'), render: onNavigate => <McpTab t={t} onNavigate={onNavigate} /> },
+    { id: 'archive', label: t('archiveTab'), render: onNavigate => <ArchiveTab t={t} onNavigate={onNavigate} /> },
+    // 重启独立成页：宿主级动作 + 需要列出被挡住的原因，塞在 MCP 页里既重复又说不清。
+    { id: 'service', label: t('serviceTab'), render: () => <ServiceTab t={t} /> },
   ]
   const initialId = rows[0]?.id ?? 'skills'
   const [requestedId, setRequestedId] = useState(initialId)
@@ -53,7 +59,7 @@ export function ExtensionPanel({ createSkill, market }: ExtensionPanelProps): Re
         </div>
         {rows.filter(row => row.id === activeId || visited.has(row.id)).map((row) => {
           const selected = row.id === activeId
-          return <div key={row.id} id={`${tabsId}-${row.id}-panel`} className="dshp-extension__tab-panel" role="tabpanel" aria-labelledby={`${tabsId}-${row.id}`} hidden={!selected}>{row.render()}</div>
+          return <div key={row.id} id={`${tabsId}-${row.id}-panel`} className="dshp-extension__tab-panel" role="tabpanel" aria-labelledby={`${tabsId}-${row.id}`} hidden={!selected}>{row.render(setRequestedId)}</div>
         })}
       </div>
     </div>

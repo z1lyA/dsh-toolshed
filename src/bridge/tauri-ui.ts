@@ -20,6 +20,7 @@ export {
   LogoGithub,
   PlugConnection,
   Puzzle,
+  Tray,
 } from '../vendor/dsh-tauri-ui/client/components/icons'
 export { Input, Menu, Modal, Pill, Switch } from '../vendor/dsh-tauri-ui/client/components/official'
 export { PanelPage } from '../vendor/dsh-tauri-ui/client/ui/panel-page'

@@ -12,9 +12,69 @@ import type * as Types from "./index.type";
 
 export const baseURL = "/dsh-mcp-studio/api";
 
+/**
+ * 带 code/blockers 的接口错误。
+ *
+ * 为什么不用默认的 `onResponseError`：它把错误压成一句 `请求失败 (409): ...`，
+ * 页面需要靠 `code` / `blockers` 区分「被活跃会话挡住」「不是归档会话」「队列写不进去」，
+ * 那句话里没有这些信息。只在会话管理/重启这几个入口上换用本错误。
+ */
+export class ApiError extends Error {
+  status: number;
+  code: string | undefined;
+  blockers: Types.RestartBlockerView[] | undefined;
+
+  constructor(status: number, message: string, code?: string, blockers?: Types.RestartBlockerView[]) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+    this.blockers = blockers;
+  }
+}
+
+/** 逐调用覆盖的错误钩子（ofetch 的 call-level 选项优先于实例 defaults）。 */
+const jsonError = {
+  onResponseError: ({ response }: { response: { status: number, _data?: unknown } }) => {
+    const data = response._data as { error?: string, message?: string, code?: string, blockers?: Types.RestartBlockerView[] } | undefined;
+    const message = data?.error ?? data?.message ?? `请求失败 (${response.status})`;
+    throw new ApiError(response.status, message, data?.code, data?.blockers);
+  },
+} satisfies FetchOptions;
+
+/** @method get */
+export function getRestartStatus(options?: FetchOptions) {
+  return ofetch<Types.RestartStatusResponse>("/host/restart", { baseURL, method: "get", ...options });
+}
+
 /** @method post */
 export function postHostRestart(options?: FetchOptions) {
-  return ofetch<void>("/host/restart", { baseURL, method: "post", ...options });
+  return ofetch<Types.RestartLaunchResponse>("/host/restart", { baseURL, method: "post", ...jsonError, ...options });
+}
+
+/** @method get */
+export function getArchived(options?: FetchOptions) {
+  return ofetch<Types.ArchiveListResponse>("/archived", { baseURL, method: "get", ...jsonError, ...options });
+}
+
+/** @method post */
+export function postArchivePlan(body: Types.ArchivePlanBody, options?: FetchOptions) {
+  return ofetch<Types.ArchivePlanResponse>("/archive/plan", { baseURL, method: "post", body, ...jsonError, ...options });
+}
+
+/** @method delete */
+export function deleteArchived(body: Types.ArchiveDeleteBody, options?: FetchOptions) {
+  return ofetch<Types.ArchiveRemoveResponse>("/archive", { baseURL, method: "delete", body, ...jsonError, ...options });
+}
+
+/** @method post */
+export function postArchiveUnarchive(body: Types.ArchiveCancelBody, options?: FetchOptions) {
+  return ofetch<Types.ArchiveUnarchiveResponse>("/archive/unarchive", { baseURL, method: "post", body, ...jsonError, ...options });
+}
+
+/** @method post */
+export function postArchivePendingCancel(body: Types.ArchiveCancelBody, options?: FetchOptions) {
+  return ofetch<Types.ArchiveCancelResponse>("/archive/pending/cancel", { baseURL, method: "post", body, ...jsonError, ...options });
 }
 
 /** @method post */

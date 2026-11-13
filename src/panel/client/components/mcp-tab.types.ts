@@ -32,4 +32,6 @@ export interface ParsedMcpJson {
 
 export interface McpTabProps {
   t: Translate
+  /** 切到别的 tab：「配置已写入，需要重启」的提示跳到「服务」页。 */
+  onNavigate: (id: string) => void
 }

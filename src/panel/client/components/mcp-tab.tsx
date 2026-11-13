@@ -6,15 +6,11 @@ import { ArrowRotateRight, Button, ChevronDown, Chip, Icon, IconButton, Menu, Mo
 import { compact } from 'dsh-tauri/client'
 import { useEffect, useState } from 'react'
 import { deleteMcp, getImportScan, getMcp, postImportApply, postMcp, postMcpCheck, postMcpToggle } from '../apis'
-import { MCP_RESTART_INITIAL_DELAY_MS, MCP_RESTART_POLL_INTERVAL_MS, MCP_RESTART_TIMEOUT_MS } from '../constants'
-import { useTimers } from '../hooks/use-timers'
-import { restartHost } from '../service/restart'
-import { isDesktopHost } from '../service/restart.utils'
 import { McpEditorForm } from './mcp-editor-form'
 import { McpImportDialog } from './mcp-import-dialog'
 import { mapToPairs, parseMcpJson, parsePairs } from './mcp-tab.utils'
 
-export function McpTab({ t }: McpTabProps): ReactElement {
+export function McpTab({ t, onNavigate }: McpTabProps): ReactElement {
   const [servers, setServers] = useState<McpRow[] | null>(null)
   const [editor, setEditor] = useState<McpEditorState | null>(null)
   const [confirmId, setConfirmId] = useState<string | null>(null)
@@ -22,8 +18,6 @@ export function McpTab({ t }: McpTabProps): ReactElement {
   const [importItems, setImportItems] = useState<McpImportItem[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [pending, setPending] = useState(false)
-  const [restartConfirm, setRestartConfirm] = useState(false)
-  const [restarting, setRestarting] = useState(false)
   const [outcome, setOutcome] = useState<{ ok: boolean, text: string } | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
@@ -34,7 +28,6 @@ export function McpTab({ t }: McpTabProps): ReactElement {
   const [scopeOpen, setScopeOpen] = useState(false)
   const [checking, setChecking] = useState<string | null>(null)
   const [globalError, setGlobalError] = useState('')
-  const { later } = useTimers()
 
   useEffect(() => {
     let current = true
@@ -262,43 +255,21 @@ export function McpTab({ t }: McpTabProps): ReactElement {
     }
   }
 
-  const doRestart = (): void => {
-    setRestartConfirm(false)
-    setRestarting(true)
-    void restartHost()
-    if (isDesktopHost())
-      return
-    const deadline = Date.now() + MCP_RESTART_TIMEOUT_MS
-    const poll = (): void => {
-      if (Date.now() > deadline)
-        return
-      later(() => {
-        void getMcp().then(
-          () => { window.location.reload() },
-          () => { poll() },
-        )
-      }, MCP_RESTART_POLL_INTERVAL_MS)
-    }
-    later(poll, MCP_RESTART_INITIAL_DELAY_MS)
-  }
-
+  /**
+   * 「配置已写入，需要重启」的常驻提示。
+   *
+   * 重启入口已经独立成「服务」tab（宿主级动作，且要能列出被挡住的原因），这里只留提示
+   * 与一个跳转，不再提供第二个重启按钮。
+   */
   const restartBanner = (
     <div className="dshp-extension__banner" data-kind="info" role="status">
       <StateDot state="ongoing" size={10} />
       <div className="dshp-extension__banner-body">
-        <span>{restarting ? t('restarting') : t('restartNeeded')}</span>
+        <span>{t('restartNeeded')}</span>
         <span className="dshp-extension__banner-hint">
-          {restarting
-            ? (!isDesktopHost() && t('restartPortHint'))
-            : isDesktopHost()
-              ? (
-                  <>
-                    {t('restartDesktopHint')}
-                    {' '}
-                    <Button variant="outline" size="sm" onClick={() => setRestartConfirm(true)}>{t('restartNow')}</Button>
-                  </>
-                )
-              : t('restartOtherHint')}
+          {t('restartGoServiceHint')}
+          {' '}
+          <Button variant="outline" size="sm" onClick={() => onNavigate('service')}>{t('goService')}</Button>
         </span>
       </div>
     </div>
@@ -316,7 +287,6 @@ export function McpTab({ t }: McpTabProps): ReactElement {
         <span className="dshp-extension__head-icon"><Icon as={PlugConnection} size={16} /></span>
         <h3>{t('mcpTitle')}</h3>
         <span className="dshp-extension__spacer" />
-        <Button variant="ghost" size="sm" disabled={restarting} onClick={() => setRestartConfirm(true)}>{t('restart')}</Button>
         <Button variant="ghost" size="sm" onClick={() => void openImport()}>{t('importServers')}</Button>
         <Button variant="primary" size="sm" onClick={openCreate}>{t('addServer')}</Button>
       </div>
@@ -328,7 +298,7 @@ export function McpTab({ t }: McpTabProps): ReactElement {
           <div className="dshp-extension__banner-body"><span>{outcome.text}</span></div>
         </div>
       )}
-      {(pending || restarting) && restartBanner}
+      {pending && restartBanner}
 
       <div className="dshp-extension__list-head">
         <h3>{t('mcpTab')}</h3>
@@ -432,21 +402,6 @@ export function McpTab({ t }: McpTabProps): ReactElement {
         )}
       >
         <p>{t('removeWarn')}</p>
-      </Modal>
-
-      <Modal
-        open={restartConfirm}
-        onClose={() => setRestartConfirm(false)}
-        closeLabel={t('close')}
-        title={t('restartConfirmTitle')}
-        footer={(
-          <>
-            <Button variant="ghost" onClick={() => setRestartConfirm(false)}>{t('cancel')}</Button>
-            <Button variant="primary" onClick={doRestart}>{t('restartNow')}</Button>
-          </>
-        )}
-      >
-        <p>{t('restartConfirmBody')}</p>
       </Modal>
 
       <McpImportDialog
