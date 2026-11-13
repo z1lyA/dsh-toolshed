@@ -1,8 +1,14 @@
-import type { RestartOutcome } from '../../../service/restart.types'
-import { defineEventHandler } from 'dsh-tauri'
-import { restart } from '../../../service/restart'
+import type { RestartLaunchResponse, ExtensionRouteDeps } from '../../index.types'
+import { defineEventHandler, dshRouteDepsOf } from 'dsh-tauri'
+import { failure } from '../../failure'
 
-export default defineEventHandler((event) => {
+/**
+ * POST /api/host/restart — 进程级重启桌面应用。
+ *
+ * 这一层比 `defineRoutes` 内建的闸门更严：要求 Origin 与 Host 同源，并拒绝任何带
+ * `forwarded` / `x-forwarded-for` / `x-real-ip` 的请求——重启是不可撤销动作，反代链不认。
+ */
+export default defineEventHandler(async (event): Promise<RestartLaunchResponse | { error: string, code?: string }> => {
   const headers = event.req.headers
   const origin = headers.get('origin')
   const host = headers.get('host')
@@ -19,15 +25,13 @@ export default defineEventHandler((event) => {
   const forwarded = headers.has('forwarded') || headers.has('x-forwarded-for') || headers.has('x-real-ip')
   if (!sameOrigin || forwarded) {
     event.res.status = 403
-    return { error: 'untrusted origin' }
+    return { error: 'untrusted origin', code: 'forbidden' }
   }
-  const outcome = restart.start()
-  if (outcome.owned) {
-    event.res.status = 409
-    return { error: 'restart is owned by the desktop shell' }
+  const deps = dshRouteDepsOf<ExtensionRouteDeps>(event)!
+  try {
+    return await deps.restart.execute()
   }
-  // tsconfig 关掉了 strict（上游代码宽松）：strictNullChecks 关闭时 TS 不按 boolean 字面量
-  // 判别式收窄可辨识联合，上面那层 outcome.owned 的守卫在编译期不算数，所以显式取这一支。
-  const launched = outcome as Extract<RestartOutcome, { owned: false }>
-  return { ok: true, pid: launched.pid, replacementPid: launched.replacementPid, logOut: launched.logOut }
+  catch (error) {
+    return failure(event, error)
+  }
 })

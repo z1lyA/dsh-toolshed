@@ -10,6 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { routes } from '.'
 import { resetTestDshHome } from '../../../../.test/test-utils'
 import { setCurrentHostInstance } from '../config/runtime'
+import { createArchiveAdmin } from '../service/archive'
+import { createRestartAdmin } from '../service/restart'
 
 vi.mock('dsh-tauri', async (importOriginal) => {
   const actual = await importOriginal<typeof import('dsh-tauri')>()
@@ -41,6 +43,12 @@ const EXPECTED_ROUTES: ReadonlyArray<readonly [string, string]> = [
   ['GET', `${P}/roots`],
   ['POST', `${P}/roots`],
   ['DELETE', `${P}/roots`],
+  ['GET', `${P}/archived`],
+  ['POST', `${P}/archive/plan`],
+  ['DELETE', `${P}/archive`],
+  ['POST', `${P}/archive/unarchive`],
+  ['POST', `${P}/archive/pending/cancel`],
+  ['GET', `${P}/host/restart`],
   ['POST', `${P}/host/restart`],
 ]
 
@@ -104,9 +112,14 @@ function createHarness(): Harness {
 
 function mount(harness: Harness): () => void {
   setCurrentHostInstance(harness.ctx as unknown as PanelExtensionHost)
+  // 会话管理与重启的实例按 harness 的临时 home 建：真正的服务（workspaceRegistry 等）
+  // 不在 mock ctx 里，正好用来验证「服务缺失时返回 503 而不是抛错」。
+  const config = { dshHome: harness.dir }
   return routes(harness.ctx as RoutesContext, {
     profileDirPath: join(harness.dir, 'profiles', 'web'),
     remountProvider: async () => {},
+    archive: createArchiveAdmin(harness.ctx as never, config),
+    restart: createRestartAdmin(harness.ctx as never, config),
   })
 }
 
@@ -164,6 +177,32 @@ describe('能力管理器路由声明', () => {
 
     dispose()
     expect(harness.registered.size).toBe(0)
+  })
+
+  it('gET /archived 在 workspaceRegistry 缺失时返回 503 而不是抛错', async () => {
+    const { base, dispose } = await start()
+
+    const response = await fetch(`${base}${P}/archived`)
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({
+      error: 'the workspace registry is not mounted',
+      code: 'registry-unavailable',
+    })
+
+    dispose()
+  })
+
+  it('gET /host/restart 在非桌面宿主下如实返回不可用（不触达进程控制）', async () => {
+    const { base, dispose } = await start()
+
+    const response = await fetch(`${base}${P}/host/restart`)
+    expect(response.status).toBe(200)
+    const body = await response.json() as { restartAvailable: boolean, blockers: unknown[], logFile?: string }
+    expect(body.restartAvailable).toBe(false)
+    expect(body.blockers).toEqual([])
+    expect(typeof body.logFile).toBe('string')
+
+    dispose()
   })
 
   it('未声明的方法拒绝访问（405 + allow 头）', async () => {
@@ -287,14 +326,14 @@ describe('能力管理器路由声明', () => {
 
     const noOrigin = await fetch(`${base}${P}/host/restart`, { method: 'POST' })
     expect(noOrigin.status).toBe(403)
-    expect(await noOrigin.json()).toEqual({ error: 'untrusted origin' })
+    expect(await noOrigin.json()).toEqual({ error: 'untrusted origin', code: 'forbidden' })
 
     const forwarded = await fetch(`${base}${P}/host/restart`, {
       method: 'POST',
       headers: { 'origin': base, 'x-forwarded-for': '127.0.0.1' },
     })
     expect(forwarded.status).toBe(403)
-    expect(await forwarded.json()).toEqual({ error: 'untrusted origin' })
+    expect(await forwarded.json()).toEqual({ error: 'untrusted origin', code: 'forbidden' })
 
     dispose()
   })

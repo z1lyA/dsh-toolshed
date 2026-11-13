@@ -1,7 +1,44 @@
+import type { ArchiveAdmin } from '../service/archive'
+import type { RestartAdmin } from '../service/restart.types'
+
+/**
+ * 注册期依赖：apply 时构造一次，请求期经 `dshRouteDepsOf` 取回。
+ *
+ * `archive` / `restart` 是本次 apply 的实例（各自持有自己的队列串行锁与状态目录），
+ * 不落模块级全局——同一份路由声明被两组 deps 各注册一次时各读各的。
+ */
 export interface ExtensionRouteDeps {
   profileDirPath: string
   remountProvider: () => Promise<void>
+  archive: ArchiveAdmin
+  restart: RestartAdmin
 }
+
+/**
+ * 已归档会话管理 / 重启的线协议类型：真实定义在 `service/archive.types.ts`，
+ * 这里再导出一次，让客户端只需要认识 `host/routes/index.types.ts` 一个入口。
+ */
+export type {
+  ArchiveAttachmentOutcome,
+  ArchiveCancelBody,
+  ArchiveCancelResponse,
+  ArchiveDeleteBody,
+  ArchiveListResponse,
+  ArchivedListTotals,
+  ArchivePlanBody,
+  ArchivePlanItemView,
+  ArchivePlanResponse,
+  ArchivePlanTotals,
+  ArchiveRemoveItemView,
+  ArchiveRemoveResponse,
+  ArchiveSweepResponse,
+  ArchiveUnarchiveResponse,
+  ArchivedPendingView,
+  ArchivedSessionView,
+  RestartBlockerView,
+  RestartLaunchResponse,
+  RestartStatusResponse,
+} from '../service/archive.types'
 
 export interface ActionResult {
   ok: boolean

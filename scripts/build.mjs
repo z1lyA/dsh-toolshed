@@ -91,4 +91,16 @@ await build({
   footer: { js: 'return module.exports; } });' },
 })
 
-console.log(`built ${id}: lib/index.js + lib/client.js`)
+// ---- restart helper (独立进程) ----------------------------------------------
+// 重启助手必须是被 spawn 的、磁盘上真实存在的独立脚本：拉起它的 Host 随后会被
+// taskkill 掉，内联在 lib/index.js 里的代码会跟着消失。所以它是第三个入口，
+// 由 host 侧按 `lib/restart-helper.js` 的固定文件名定位。
+await build({
+  ...shared,
+  entryPoints: ['src/panel/host/service/restart-helper.ts'],
+  outfile: 'lib/restart-helper.js',
+  format: 'esm',
+  platform: 'node',
+})
+
+console.log(`built ${id}: lib/index.js + lib/client.js + lib/restart-helper.js`)

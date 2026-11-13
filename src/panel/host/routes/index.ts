@@ -1,5 +1,11 @@
 import type { ExtensionRouteDeps } from './index.types'
 import { defineRoutes } from 'dsh-tauri'
+import archivePlan from './archive/plan/post'
+import archiveRemove from './archive/delete'
+import archived from './archive/get'
+import pendingCancel from './archive/pending/cancel/post'
+import archiveUnarchive from './archive/unarchive/post'
+import restartCheck from './host/restart/get'
 import restart from './host/restart/post'
 import importApply from './import/apply/post'
 import importScan from './import/scan/get'
@@ -43,5 +49,15 @@ export const routes = defineRoutes<ExtensionRouteDeps>((disposer) => {
   disposer.post({ kind: 'exact', path: '/dsh-mcp-studio/api/roots' }, rootsAdd)
   disposer.delete({ kind: 'exact', path: '/dsh-mcp-studio/api/roots' }, rootsRemove)
 
+  // 已归档会话管理：列表 / dry-run 计划 / 删除 / 取消归档 / 取消待删除。
+  // 路径数 +5（defineRoutes 按 (kind, path) 收敛，同一路径多方法只占一行注册）。
+  disposer.get({ kind: 'exact', path: '/dsh-mcp-studio/api/archived' }, archived)
+  disposer.post({ kind: 'exact', path: '/dsh-mcp-studio/api/archive/plan' }, archivePlan)
+  disposer.delete({ kind: 'exact', path: '/dsh-mcp-studio/api/archive' }, archiveRemove)
+  disposer.post({ kind: 'exact', path: '/dsh-mcp-studio/api/archive/unarchive' }, archiveUnarchive)
+  disposer.post({ kind: 'exact', path: '/dsh-mcp-studio/api/archive/pending/cancel' }, pendingCancel)
+
+  // 服务页：GET 读状态、POST 执行重启（同一 path，仍是一行注册）。
+  disposer.get({ kind: 'exact', path: '/dsh-mcp-studio/api/host/restart' }, restartCheck)
   disposer.post({ kind: 'exact', path: '/dsh-mcp-studio/api/host/restart' }, restart)
 })
