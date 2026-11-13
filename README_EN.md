@@ -58,7 +58,9 @@ skills/               ← skills shipped with the package (host half mounts them
   find-skills/          byte-identical to the upstream release artifact
 ```
 
-Two artifacts: `lib/index.js` (host half, ESM) and `lib/client.js` (client half, DSH ModuleLoader CJS).
+Two artifacts — three since 1.1.0: `lib/index.js` (host half, ESM), `lib/client.js` (client half, DSH ModuleLoader CJS)
+and `lib/restart-helper.js` (the restart helper, which must run as a **separate process**: the host that spawns it is
+killed right after, so inlining it into the main bundle would take it down too).
 
 ### Cross-platform changes (three adaptations + behaviour fixes)
 
@@ -103,11 +105,38 @@ Restart DSH once after a host-half update, then hard-refresh the browser.
 
 ## 🧭 UI
 
-The sidebar shows **扩展** (Puzzle icon) with the original three-tab panel:
-**MCP** (list, add/edit, enable/disable, restart, connection check, copy, import scanning, JSON export/import),
+The sidebar shows **扩展** (Puzzle icon) with the original panel — five tabs since 1.1.0:
+**MCP** (list, add/edit, enable/disable, connection check, copy, import scanning, JSON export/import; a write shows a
+"restart needed" banner that links to the Service tab),
 **Skills** (grouped list, search, enable/disable, view/edit SKILL.md, create — opens a new conversation in the
 current workspace with `/skill-creator` prefilled — delete, open folder, refresh),
+**Archived** (see below),
+**Service** (process-level restart, see below),
 **plugin market** (embeds [`dshmarket`](https://github.com/dsh-market/dsh-market) when it publishes `render`, and hides the duplicate settings-page entry; no tab if the market is missing or too old).
+
+### 🗂 Archived sessions
+
+DSH can archive and unarchive but has **no delete API**. This tab adds it, with explicit rules:
+
+- Only registry-archived sessions are eligible; ids must match `^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$`.
+- **Sessions still live in memory are never force-deleted**: the host keeps an Agent handle once a conversation was
+  opened, and deleting the log under it makes the backend recreate a headerless log. Such sessions (and their
+  subagent descendants) are queued in `$DSH_HOME/session-admin/pending-deletions.json` and executed on the
+  **next DSH start**; the page shows "pending" and lets you cancel at any time.
+- Deletion covers the whole per-session log directory, the projection cache, schedules bound to the session, the
+  workspace slot and the archive tombstone.
+- **Attachments (on by default)** are removed only after a complete reference scan of every remaining session plus
+  the upload index proves nothing else uses them; an incomplete scan removes **nothing** and reports why.
+- Unarchiving cancels the pending deletion immediately (workspace `domain/changed` listener + a sweep on every read).
+
+### 🔄 Restart on the Service tab
+
+A process-level restart (DSH exposes no restart API to plugins): the host inspects running turns, queued input and
+running/stopping jobs (archived sessions exempt), refuses with the blocking list when there is active work, otherwise
+writes a restart plan, spawns the detached helper `lib/restart-helper.js`, replies, then `taskkill /T`s the current
+Electron process tree; the helper waits for the old process to exit and relaunches the same executable as a GUI app.
+Log: `$DSH_HOME/session-admin/restart.log`. **Desktop only** (detected via `ELECTRON_RUN_AS_NODE=1` + an argv entry
+containing `dsh-desktop-host` + a real parent process); Web / CLI report it as unavailable.
 
 <p align="center">
   <img src="assets/screenshot-market.png" alt="Extension panel · Market" width="720" /><br/>
@@ -120,7 +149,7 @@ current workspace with `/skill-creator` prefilled — delete, open folder, refre
 ```sh
 pnpm install
 pnpm typecheck     # tsc --noEmit (currently clean)
-pnpm build         # node scripts/build.mjs → lib/index.js + lib/client.js
+pnpm build         # node scripts/build.mjs → lib/index.js + lib/client.js + lib/restart-helper.js
 pnpm test          # node scripts/run-tests.mjs (vitest; see below)
 ```
 
@@ -139,6 +168,9 @@ pnpm test          # node scripts/run-tests.mjs (vitest; see below)
 - **[deepseek-harness-desktop](https://github.com/dsh-tauri-desk/deepseek-harness-desktop)** by Hairyf and contributors —
   the panel, the framework bridge and the UI components in this repository are their original work,
   vendored here. Please support the upstream project and its Tauri desktop edition.
+- **[z1lyA/dsh-session-admin](https://github.com/z1lyA/dsh-session-admin)** — the 1.1.0 "Archived" tab and the
+  Service-tab restart are ported from that plugin (deletion rules, pending queue, desktop process-level restart);
+  the MIT licence and our changes are recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 - Official plugin docs: <https://deepseek-harness.github.io/deepseek-harness/develop/basic/>
 
 ## 📄 License

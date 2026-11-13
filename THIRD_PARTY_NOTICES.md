@@ -60,6 +60,27 @@ Copyright (c) 2026 deepseek-harness-desktop contributors
 
 ---
 
+## z1lyA/dsh-session-admin（1.1.0 起的「已归档」tab 与「服务」页重启）
+
+- 来源：<https://github.com/z1lyA/dsh-session-admin>（作者即本 fork 的维护者）
+- 许可：MIT（见该仓库 LICENSE）
+- 搬运范围（`src/panel/host/service/`）：
+  - `session-paths.ts` ← `lib/paths.js`
+  - `session-attachments.ts` ← `lib/attachments.js`
+  - `pending-deletions.ts` ← `lib/pending.js`
+  - `archive.ts` ← `lib/archive.js`
+  - `restart-helper.ts` ← `lib/restart-helper.js`
+  - `restart.ts` ← `lib/restart.js`（替换了本仓库 1.0.x 自带的 `dsh` CLI 语义重启实现）
+- 搬运方式：逻辑 1:1，仅做 JS → TS 迁移（类型、`ctx` 最小面 `{ get, logger }`）、把「裸 `webServer.register`
+  + 手写信任栅门」换成 `defineRoutes`（回环 / Origin / 405 / OPTIONS / 1 MiB body 由其统一承担）、
+  删除 `lib/http.js`（等价实现不再需要）、删除 `unarchive` 之外的死代码；界面从 session-admin 的
+  `React.createElement` 页面改写为本仓库的 CSSR + `dsh-tauri-ui` 组件（`.dshp-extension__*`），
+  视觉与交互与其余 tab 一致。
+- 边界语义未改：只删归档会话、live 会话排队到下次启动、整棵日志目录、投影缓存、绑定定时任务、
+  附件「完整扫描后才删」、取消归档清队列、`$DSH_HOME/session-admin/` 目录（队列与重启日志）保持不变。
+
+---
+
 ## 本项目（dsh-mcp-studio）的改动
 
 - 上游三个包的源码原样搬运，仅调整模块解析（`src/bridge/`，构建期映射旧裸包名）。
@@ -68,5 +89,7 @@ Copyright (c) 2026 deepseek-harness-desktop contributors
 - 移除对 Tauri 运行时的引用路径：Tauri 专属模块（invoke / listen / iframe 桥）保留在 vendor 中但不被任何入口引用，产物不会访问 `window.__TAURI__`。
 - 补回上游随包的 `skills/`（`skill-creator` + `find-skills`，与上游发布产物逐字节相同；
   `package.json` 的 `files` 同步补 `skills`），见上。
+- **1.1.0**：面板从三个 tab 扩到五个（新增「已归档」与「服务」）；`/host/restart` 的实现被换成本仓库维护者
+  自己那套桌面进程级重启（见上一节），构建新增第三个入口 `lib/restart-helper.js`；路由行数 13 → 18。
 
 除上述改动外，界面与 host 逻辑版权归上游作者所有。

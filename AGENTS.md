@@ -40,10 +40,16 @@ hookable v5 的 `callHook` 变成异步（钩子要等一个微任务），而�
 
 ```sh
 pnpm install
-pnpm typecheck     # tsc --noEmit（上游代码宽松，故 strict: false）；当前全绿，别再让它变红
+pnpm typecheck     # tsc --noEmit（上游代码宽松，故 strict: false）
 pnpm build         # node scripts/build.mjs
 pnpm test          # node scripts/run-tests.mjs（签绑定 + 挑非 hardened Node，见约束 3）
+node .test/host-smoke.mjs 18   # 不起 DSH：mock ctx 调 apply()，数 webServer.register 的行数（应为 18）
 ```
+
+> **typecheck 需要宿主提供的 `@deepseek-ai/*` 类型**（约束 4 让它们保持 external）。作者机器上这些类型来自
+> DSH 运行时；在没有它们的机器（例如只装了 Desktop 发行版）上 `pnpm typecheck` 会报一堆 `TS2307`——那是环境
+> 缺口，不是代码坏了。此时代替门禁是 `pnpm build` + `pnpm test` + 真机硬刷新。别为了让 tsc 变绿去把官方包
+> 装成 devDependency：它们的传递依赖里有未发布的包（`@deepseek-ai/dsh-user-interaction` 等），装不上。
 
 **这个仓库没有 CI，是有意的**：`typecheck` 需要宿主提供的 `@deepseek-ai/*`（约束 4 让它们保持 external），
 `test` 需要非 hardened 的 Node，两者在干净 runner 上都跑不出有意义的结论——把门禁放本地，
@@ -76,8 +82,8 @@ curl -s http://127.0.0.1:<port>/dsh-mcp-studio/api/mcp
 curl -s http://127.0.0.1:<port>/dsh-mcp-studio/api/skills
 ```
 
-host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.js`，用带 `webServer` / `skills` / `connection` / `logger` 的
-mock ctx 调 `apply(ctx, { profile: 'desktop' })`，应注册 13 条路由且不抛错。
+host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.js`，用带 `webServer` / `skills` / `connection` / `logger` / `on`
+的 mock ctx 调 `apply(ctx, { profile: 'desktop' })`，应注册 **18** 条路由且不抛错（`.test/host-smoke.mjs` 就是它）。
 
 ## 约定
 
@@ -89,7 +95,18 @@ mock ctx 调 `apply(ctx, { profile: 'desktop' })`，应注册 13 条路由且不
   类型声明，`isString(x)` 不收窄 `unknown`，用本地类型守卫。
 - 测试资产：`.test/test-utils.ts` 提供 `testDshHome` / `resetTestDshHome`（DSH_HOME 必须是模块加载期常量，
   `vi.mock` 工厂被提升后会捕获它的值，所以「每例一份干净环境」靠清空同一目录实现）。
-- 产物只有 `lib/index.js`（ESM host）与 `lib/client.js`（ModuleLoader CJS client + id `dsh-mcp-studio`）。
+- 产物只有 `lib/index.js`（ESM host）、`lib/client.js`（ModuleLoader CJS client + id `dsh-mcp-studio`）与
+  `lib/restart-helper.js`（**独立进程**的重启助手：拉起它的 Host 随后会被 taskkill，内联进主 bundle 就会一起消失，
+  所以它是第三个 esbuild 入口，host 侧按固定文件名定位）。
 - `package.json` 的 `dsh.client.inject` 必须列出用到的官方客户端模块（layout / primitives / renderer / locale）。
+- **面板有五个 tab**（`client/components/extension-panel.tsx` 的 `rows`）：市场（条件）/ 技能 / MCP / 已归档 / 服务。
+  新 tab 一律**追加在末尾**：`rows[0]` 就是首屏默认页，插到前面会改掉所有人的默认页。tab 之间要跳转时用
+  `render(onNavigate)` 传下去的 `setRequestedId`，不要自己造状态容器。
+- **重启入口只有一个**：`service-tab.tsx`（「服务」页）。MCP 只保留「配置已写入，需要重启」的提示 + 跳转。
+  别再往别的页面塞第二个重启按钮。
+- 会话管理的服务层（`service/archive.ts`、`session-paths.ts`、`session-attachments.ts`、`pending-deletions.ts`）
+  是**纯 Node**、不依赖 DSH 服务（靠 `ctx.get` 取），因此可以脱离 DSH 直接单测；它们的线协议类型在
+  `service/archive.types.ts`，由 `routes/index.types.ts` 再导出给客户端。队列与重启日志的目录**保持**
+  `$DSH_HOME/session-admin/`（改目录会让老队列的删除意图静默失效）。
 - 中文注释解释“为什么”（约束、顺序、坑），不解释“是什么”。
 - 任何行为变更都要同步 `README.md`、`README_EN.md`、`CHANGELOG.md`，并保留上游鸣谢与许可说明。

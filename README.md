@@ -43,9 +43,12 @@ Tauri 桌面版（[deepseek-harness-desktop](https://github.com/dsh-tauri-desk/d
 
 ```
 src/                          ← 活代码：从产物入口走得到的部分
-├── panel/                    ← dsh-tauri-panel-extension（原样搬运）
-│   ├── host/                 service（mcp / skills / agents / repos / restart / rmtree）、routes（mcp / skill / import / roots / host）
-│   ├── client/               components（mcp-tab / mcp-editor-form / mcp-import-dialog / skills-tab / extension-panel / market-tab）、
+├── panel/                    ← dsh-tauri-panel-extension（原样搬运）+ 1.1.0 的会话管理
+│   ├── host/                 service（mcp / skills / agents / repos / restart / rmtree
+│   │                          / archive / pending-deletions / session-paths / session-attachments / restart-helper）、
+│   │                         routes（mcp / skill / import / roots / archive / host）
+│   ├── client/               components（mcp-tab / mcp-editor-form / mcp-import-dialog / skills-tab
+│   │                          / archive-tab / service-tab / extension-panel / market-tab）、
 │   │                         register（extension-panel / skill-creator-prefill / styles）、locales、styles、store、apis
 │   └── shared/
 ├── vendor/
@@ -61,7 +64,8 @@ skills/                       ← 随包发布的技能（host 半按 package.js
   find-skills/                  与上游发布产物逐字节相同
 ```
 
-产物只有两个文件：`lib/index.js`（host 半，ESM）与 `lib/client.js`（client 半，DSH ModuleLoader CJS）。
+产物三个文件：`lib/index.js`（host 半，ESM）、`lib/client.js`（client 半，DSH ModuleLoader CJS）与
+`lib/restart-helper.js`（重启助手，**独立进程**跑：拉起它的 Host 随后会被 taskkill，内联进主 bundle 就会一起消失）。
 
 ### 通用化改造（三处适配 + 行为修复）
 
@@ -117,15 +121,45 @@ pnpm install --dir ~/.dsh/profiles/<profile>
 
 ## 🧭 界面
 
-装好后侧边栏出现 **扩展**（Puzzle 图标），点开就是原来的三 tab 面板：
+装好后侧边栏出现 **扩展**（Puzzle 图标），点开就是原来的面板，1.1.0 起是五个 tab：
 
 | Tab | 能力 |
 | --- | --- |
-| **MCP** | 服务器列表（项目级 / 全局、启用状态、传输方式、URL / 命令）、新增与编辑表单、启用 / 停用、重启、连接检查、复制片段、从其他 DSH profile 或 Claude / Cursor / Windsurf / VS Code 配置**导入扫描**、JSON 导出导入 |
+| **MCP** | 服务器列表（项目级 / 全局、启用状态、传输方式、URL / 命令）、新增与编辑表单、启用 / 停用、连接检查、复制片段、从其他 DSH profile 或 Claude / Cursor / Windsurf / VS Code 配置**导入扫描**、JSON 导出导入；写入后提示「需要重启」，重启动作在「服务」页 |
 | **Skills** | 技能列表（按来源分组）、搜索、启用 / 停用、查看与编辑 SKILL.md、新建技能（在当前工作区开一条新对话并预填 `/skill-creator`）、删除、打开目录、刷新 |
+| **已归档** | 已归档会话列表（工作区、精确磁盘占用、文件数、子代理数）、全选 / 半选 / 单选、批量**取消归档**、批量**永久删除**（dry-run 计划 → 确认 → 执行）、**待删除**队列与取消 |
+| **服务** | 进程级重启：可重启状态、被挡住的原因（运行中会话 / 排队输入 / 后台任务）、重启按钮、重启日志路径 |
 | **插件市场** | 已安装 [`dshmarket`](https://github.com/dsh-market/dsh-market) 且其客户端提供 `render` 时，把市场面板嵌进本 tab，并藏掉设置页里的重复入口；未安装或旧版没有 `render` 时不出现该 tab，设置页入口保留 |
 
 技能启停沿用上游策略：写 SKILL.md 的 `user-invocable` 策略位，不新增旁路状态。
+
+### 🗂 已归档会话管理
+
+DSH 只提供归档 / 取消归档，**没有删除会话的接口**。这个 tab 把缺失的那一步补上，并把边界条件做成显式规则：
+
+- 只有注册表里处于**归档态**的会话能被操作；id 走路径白名单（`^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$`）。
+- **仍在内存里的会话不强删**：Host 只要打开过一条会话就持有 Agent 句柄，此时删日志会让后端重建无 header 的日志。
+  这类会话（含它们的 subagent 派生子会话）被登记到 `$DSH_HOME/session-admin/pending-deletions.json`，
+  **下次 DSH 启动时**在浏览器打开会话之前执行；页面显示「待删除」并支持随时取消。
+- 删除范围：整棵会话日志目录 `sessions/<cwd 编码>/<sessionId 编码>/`（绝不截断 zstd 日志）、
+  投影缓存 `storages/session_projcache/sessions/<id>.json`、绑定到该会话的定时任务、工作区槽位与归档墓碑。
+- **附件（可选，默认开）**：先读被删会话事件得到候选 `sha256:` 对象，再扫描其余全部会话事件 +
+  `$DSH_HOME/llm-deepseek/files-v3.json` 上传索引；只删除**没有任何剩余引用**的对象。
+  扫描不完整（读失败 / 超预算）时**一个附件都不删**，并在结果里报告原因。
+- 取消归档会立刻清掉该会话的待删除意图（监听 workspace 域的 `domain/changed`，页面每次读取也会兜底清理）。
+- 已知限制：删除后本页会刷新，但原生侧栏的会话列表可能残留到下一次页面刷新 / 重启；
+  多开实例时 JSON 存储域是「最后写入者获胜」，建议单实例操作。
+
+### 🔄 服务页重启
+
+重启是**进程级**实现（DSH 没有给插件暴露重启接口）：先检查工作区里运行中的回合、排队中的输入、
+running / stopping 的后台 job（**已归档会话豁免**），有交叉就拒绝并列出原因；无交叉时写重启计划、
+拉起脱离进程树的助手 `lib/restart-helper.js`、HTTP 回复后 `taskkill /T` 当前 Electron 进程树，
+助手等旧进程退出、单实例锁释放后以 GUI 方式重拉同一个可执行文件。日志在
+`$DSH_HOME/session-admin/restart.log`。
+
+**只在 DSH 桌面应用里可用**（判据：`ELECTRON_RUN_AS_NODE=1` + argv 含 `dsh-desktop-host` + 有父进程）；
+Web / CLI 会如实显示「不可用」并提示手动重启。重启会中断当前回合，请先确认没有正在进行的对话。
 
 <p align="center">
   <img src="assets/screenshot-market.png" alt="扩展面板 · 市场" width="720" /><br/>
@@ -139,16 +173,19 @@ pnpm install --dir ~/.dsh/profiles/<profile>
 
 | 方法 | 路径 |
 | --- | --- |
-| GET | `/dsh-mcp-studio/api/skills`、`/api/mcp`、`/api/skill?name=`、`/api/roots`、`/api/import/scan` |
-| POST | `/api/mcp`、`/api/mcp/toggle`、`/api/mcp/check`、`/api/mcp/copy`、`/api/skills/refresh`、`/api/skill`、`/api/skill/policy`、`/api/import/apply`、`/api/roots`、`/api/open/dir`、`/api/host/restart` |
-| DELETE | `/api/mcp`、`/api/skill`、`/api/roots` |
+| GET | `/dsh-mcp-studio/api/skills`、`/api/mcp`、`/api/skill?name=`、`/api/roots`、`/api/import/scan`、`/api/archived`、`/api/host/restart` |
+| POST | `/api/mcp`、`/api/mcp/toggle`、`/api/mcp/check`、`/api/mcp/copy`、`/api/skills/refresh`、`/api/skill`、`/api/skill/policy`、`/api/import/apply`、`/api/roots`、`/api/open/dir`、`/api/host/restart`、`/api/archive/plan`、`/api/archive/unarchive`、`/api/archive/pending/cancel` |
+| DELETE | `/api/mcp`、`/api/skill`、`/api/roots`、`/api/archive` |
+
+`defineRoutes` 按 `(kind, path)` 收敛，同一路径的多个方法只占一行 `webServer.register`：1.1.0 起共 **18** 行。
+错误体统一是 `{ error, code }`（重启被挡住时多一个 `blockers` 数组），面板靠 `code` 分支。
 
 ## 🛠 开发
 
 ```sh
 pnpm install
 pnpm typecheck     # tsc --noEmit，解析宿主真实类型（当前全绿）
-pnpm build         # node scripts/build.mjs → lib/index.js + lib/client.js
+pnpm build         # node scripts/build.mjs → lib/index.js + lib/client.js + lib/restart-helper.js
 pnpm test          # node scripts/run-tests.mjs（vitest；见下方说明）
 ```
 
@@ -170,6 +207,9 @@ pnpm test          # node scripts/run-tests.mjs（vitest；见下方说明）
 - **[deepseek-harness-desktop](https://github.com/dsh-tauri-desk/deepseek-harness-desktop)**（Tauri 桌面版，作者 Hairyf 与贡献者）——
   本项目搬运的 `dsh-tauri-panel-extension`、`dsh-tauri`、`dsh-tauri-ui` 三个包全部来自该仓库，
   **界面、交互与 host 服务逻辑均为其原始实现**；没有它就没有这个插件。请优先支持上游与 Tauri 桌面版。
+- **[z1lyA/dsh-session-admin](https://github.com/z1lyA/dsh-session-admin)** —— 1.1.0 的「已归档」tab 与「服务」页重启
+  移植自该插件（含删除边界规则、待删除队列与桌面进程级重启）；原始 MIT 许可与改动说明见
+  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 - 官方插件开发文档：<https://deepseek-harness.github.io/deepseek-harness/develop/basic/>
 
 ## 📄 License
