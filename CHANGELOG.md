@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.0.0] — 2026-11-13
+
+**更名，独立立项：`dsh-mcp-studio` → `dsh-toolshed`。**
+
+从上游 `functy23/dsh-mcp-studio` fork 之后又并入了 `dsh-session-admin` 的会话管理与桌面重启，功能范围与身份
+都已超出「MCP 工作室」，且 npm 上 `dsh-mcp-studio` 属上游作者、发不了同名包，因此改名独立发版。
+
+### Changed
+
+- 包名 / 插件 id / HTTP 路由前缀 / client bundle id 全改为 `dsh-toolshed`（路由前缀 `/dsh-toolshed/api/*`）；
+  `cordis.patch.yml` 的行 id、`scripts/build.mjs` 的 `id`、`PLUGIN_ID` 同步。
+- 侧边栏入口名从「扩展管理」改为「**工具管理**」（英文 `Toolshed`）——现在它管的是 MCP 行 / 技能 / 会话 / 重启。
+- `LICENSE` 的版权行、`package.json` 的 repository / homepage / bugs 指向 `z1lyA/dsh-toolshed`；
+  `THIRD_PARTY_NOTICES.md` 明确记录 fork 自 functy23/dsh-mcp-studio，上游 MIT + 附加条款继续适用。
+
+### Notes
+
+- **升级方式**：这是新 id 的新插件，需先卸载旧包再装新包（`dependencies` + `dsh.profile.bundles` 都要换名），
+  不能原地覆盖；数据目录 `$DSH_HOME/session-admin/`（待删除队列、重启日志）**故意沿用**，队列意图不会丢。
+
 ## [1.2.0] — 2026-11-13
 
 ### Changed

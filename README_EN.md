@@ -1,27 +1,30 @@
 <div align="center">
 
-<img src="assets/icon.png" alt="dsh-mcp-studio" width="128" />
+<img src="assets/icon.png" alt="dsh-toolshed" width="128" />
 
-# dsh-mcp-studio
+# dsh-toolshed
 
-**The MCP server & Skills manager for DeepSeek Harness — the Tauri desktop edition's extension panel, consolidated into one plugin.**
+**The tool-surface manager for DeepSeek Harness: MCP servers, Skills, archived sessions, plus a host restart — all behind one sidebar entry.**
 
-[![dsh-mcp-studio](https://img.shields.io/badge/dsh--mcp--studio-DSH%20plugin-4d6bfe.svg)](https://github.com/functy23/dsh-mcp-studio)
+[![dsh-toolshed](https://img.shields.io/badge/dsh--toolshed-DSH%20plugin-4d6bfe.svg)](https://github.com/z1lyA/dsh-toolshed)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Top Language](https://img.shields.io/github/languages/top/functy23/dsh-mcp-studio?style=flat)](https://github.com/functy23/dsh-mcp-studio)
-[![Platform](https://img.shields.io/badge/platform-Web%20%7C%20Desktop-lightgrey.svg)](https://github.com/functy23/dsh-mcp-studio)
+[![Platform](https://img.shields.io/badge/platform-Web%20%7C%20Desktop-lightgrey.svg)](https://github.com/z1lyA/dsh-toolshed)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?logo=opensourceinitiative&logoColor=white)](https://opensource.org/licenses/MIT)
 
-[![Stars](https://img.shields.io/github/stars/functy23/dsh-mcp-studio?style=flat&logo=github)](https://github.com/functy23/dsh-mcp-studio/stargazers)
-[![Repo Size](https://img.shields.io/github/repo-size/functy23/dsh-mcp-studio?style=flat&logo=github)](https://github.com/functy23/dsh-mcp-studio)
-[![Contributors](https://img.shields.io/github/contributors/functy23/dsh-mcp-studio?color=ee8449&logo=githubsponsors)](https://github.com/functy23/dsh-mcp-studio/graphs/contributors)
-
-[Issues](https://github.com/functy23/dsh-mcp-studio/issues) • [Changelog](CHANGELOG.md) • [简体中文](README.md)
+[Issues](https://github.com/z1lyA/dsh-toolshed/issues) • [Changelog](CHANGELOG.md) • [简体中文](README.md) •
+Forked from [functy23/dsh-mcp-studio](https://github.com/functy23/dsh-mcp-studio)
 
 </div>
 
 ---
+
+> **Why the rename**: this started as a fork of `dsh-mcp-studio` (MCP / Skills only). It then absorbed the archived
+> session manager and desktop process restart from [z1lyA/dsh-session-admin](https://github.com/z1lyA/dsh-session-admin),
+> so both its scope and its identity changed — and the npm name `dsh-mcp-studio` belongs to the original author, so a
+> fork cannot publish under it. Hence **`dsh-toolshed`** as an independent project (plugin id, route prefix and
+> artifact id all changed; old versions must be uninstalled before installing this one). The upstream MIT licence and
+> its additional terms still apply — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## 📦 What this is
 
@@ -36,7 +39,7 @@ ships its extension panel (Skills / MCP / plugin market) as **three mutually dep
 
 Installing MCP management meant installing all three, and it only worked inside the Tauri build.
 
-**dsh-mcp-studio consolidates them into a single package**: the upstream sources are vendored as-is
+**dsh-toolshed consolidates them into a single package**: the upstream sources are vendored as-is
 (`src/panel`, `src/vendor/dsh-tauri`, `src/vendor/dsh-tauri-ui`), a build-time alias layer (`src/bridge`)
 maps the old bare specifiers onto those local files, and only the minimum changes needed for
 cross-platform support are applied. **No UI was rewritten.**
@@ -67,7 +70,7 @@ killed right after, so inlining it into the main bundle would take it down too).
 1. **Module mapping** — `dsh-tauri`, `dsh-tauri/client`, `dsh-tauri-ui/client` resolve to `src/bridge/*`, so upstream imports are untouched.
 2. **Profile detection** — upstream only honoured `--profile`; `DSH_PROFILE`, `DSH_PROFILE_DIR` and the
    `<DSH_HOME>/profiles/<name>` launcher argument are now detected too, so MCP rows land in the right profile.
-3. **Own identity** — plugin id and route prefix are `dsh-mcp-studio` (`/dsh-mcp-studio/api/*`), so it coexists with the Tauri plugin.
+3. **Own identity** — plugin id and route prefix are `dsh-toolshed` (`/dsh-toolshed/api/*`), distinct from both the Tauri plugin and the upstream `dsh-mcp-studio`, so it coexists with either.
 4. **"New skill" flow** — upstream only ran "workspace → `connectWorkspace` opens a session", while 0.1.7 moved
    navigation to `uiWorkspace`. The panel now walks four rungs: official `sessions.create({ workspaceId })` opens a
    **new conversation in the workspace of the current session** → the adapter-projected `workspaces.connectWorkspace`
@@ -90,8 +93,8 @@ Tauri-only code (invoke / listen / iframe bridges) stays vendored but unreferenc
 Install into whichever profile you use:
 
 ```sh
-dsh plugin --profile web     add dsh-mcp-studio@latest   # DSH Web
-dsh plugin --profile desktop add dsh-mcp-studio@latest   # DSH Desktop
+dsh plugin --profile web     add dsh-toolshed@latest   # DSH Web (use the link install below until it is on npm)
+dsh plugin --profile desktop add dsh-toolshed@latest   # DSH Desktop
 ```
 
 > **About `dsh.client.platform: web`** — `web` names the *client kind* (the Web GUI), not a profile. The Web and
@@ -114,7 +117,7 @@ Restart DSH once after a host-half update, then hard-refresh the browser.
 
 ## 🧭 UI
 
-The sidebar shows **扩展** (Puzzle icon) with three tabs, and the **top-right corner of the tab row** holds
+The sidebar shows **工具管理 / Toolshed** (Puzzle icon) with three tabs, and the **top-right corner of the tab row** holds
 refresh + restart:
 
 - **Skills** (grouped list, search, enable/disable, view/edit SKILL.md, create — opens a new conversation in the

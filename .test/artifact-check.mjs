@@ -33,14 +33,14 @@ const host = decode(readFileSync('lib/index.js', 'utf8'))
 const present = [
   [client, '已归档'],
   [client, '重启服务'],
-  [client, '扩展管理'],
+  [client, '工具管理'],
   [client, 'archiveTab'],
   [client, 'restartNow'],
   [client, 'dshp-extension__head-actions'],
   [client, '/host/restart'],
   [client, '"/archived"'],
-  [host, '/dsh-mcp-studio/api/archive/plan'],
-  [host, '/dsh-mcp-studio/api/host/restart'],
+  [host, '/dsh-toolshed/api/archive/plan'],
+  [host, '/dsh-toolshed/api/host/restart'],
   [host, 'pending-deletions.json'],
 ]
 

@@ -1,4 +1,4 @@
-# AGENTS.md — dsh-mcp-studio
+# AGENTS.md — dsh-toolshed
 
 面向在本仓库工作的 agent / 开发者。
 
@@ -68,8 +68,8 @@ export PATH="$HOME/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/node/bin:$
 
 ```sh
 # ~/.dsh/profiles/<profile>/package.json
-#   dependencies: { "dsh-mcp-studio": "link:/abs/path" }
-#   dsh.profile.bundles: [ ..., "dsh-mcp-studio" ]
+#   dependencies: { "dsh-toolshed": "link:/abs/path" }
+#   dsh.profile.bundles: [ ..., "dsh-toolshed" ]
 pnpm install --dir ~/.dsh/profiles/<profile>
 ```
 
@@ -78,8 +78,8 @@ pnpm install --dir ~/.dsh/profiles/<profile>
 - 路由自检：
 
 ```sh
-curl -s http://127.0.0.1:<port>/dsh-mcp-studio/api/mcp
-curl -s http://127.0.0.1:<port>/dsh-mcp-studio/api/skills
+curl -s http://127.0.0.1:<port>/dsh-toolshed/api/mcp
+curl -s http://127.0.0.1:<port>/dsh-toolshed/api/skills
 ```
 
 host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.js`，用带 `webServer` / `skills` / `connection` / `logger` / `on`
@@ -99,7 +99,7 @@ host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.
   （产物自检）、`.test/live-data-probe.ts`（用真实 `~/.dsh` 只读跑 `list`/`plan`，需先用 esbuild 打成 mjs）。
   `vitest.config.ts` 里额外把 `@deepseek-ai/dsh-client-ui-primitives` 指到 `.test/primitives-stub.tsx`：
   官方 UI 包是 host-provided（构建期 external、本地未安装），否则组件渲染测试会 `Cannot find package`。
-- 产物只有 `lib/index.js`（ESM host）、`lib/client.js`（ModuleLoader CJS client + id `dsh-mcp-studio`）与
+- 产物只有 `lib/index.js`（ESM host）、`lib/client.js`（ModuleLoader CJS client + id `dsh-toolshed`）与
   `lib/restart-helper.js`（**独立进程**的重启助手：拉起它的 Host 随后会被 taskkill，内联进主 bundle 就会一起消失，
   所以它是第三个 esbuild 入口，host 侧按固定文件名定位）。
 - `package.json` 的 `dsh.client.inject` 必须列出用到的官方客户端模块（layout / primitives / renderer / locale）。

@@ -10,7 +10,7 @@ import type { FetchOptions } from "dsh-tauri/client";
 import { ofetch } from "dsh-tauri/client";
 import type * as Types from "./index.type";
 
-export const baseURL = "/dsh-mcp-studio/api";
+export const baseURL = "/dsh-toolshed/api";
 
 /**
  * 带 code/blockers 的接口错误。

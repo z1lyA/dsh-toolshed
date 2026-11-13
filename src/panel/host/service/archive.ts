@@ -293,7 +293,7 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
         await table.delete(sessionId)
       }
       catch (error) {
-        warn(`[dsh-mcp-studio] projection cache record delete failed for ${sessionId}: ${String(error)}`)
+        warn(`[dsh-toolshed] projection cache record delete failed for ${sessionId}: ${String(error)}`)
       }
     }
     try {
@@ -357,7 +357,7 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
       queue = await readQueue()
     }
     catch (error) {
-      warn(`[dsh-mcp-studio] pending deletion queue is unreadable; prune skipped: ${error instanceof Error ? error.message : String(error)}`)
+      warn(`[dsh-toolshed] pending deletion queue is unreadable; prune skipped: ${error instanceof Error ? error.message : String(error)}`)
       return { removed: [], kept: 0 }
     }
     if (queue.length === 0)
@@ -371,7 +371,7 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
       await writeQueue(kept)
     }
     catch (error) {
-      warn(`[dsh-mcp-studio] could not prune the pending deletion queue: ${error instanceof Error ? error.message : String(error)}`)
+      warn(`[dsh-toolshed] could not prune the pending deletion queue: ${error instanceof Error ? error.message : String(error)}`)
       return { removed: [], kept: kept.length }
     }
     return { removed, kept: kept.length }
@@ -385,7 +385,7 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
     pruneTimer = setTimeout(() => {
       pruneTimer = null
       prunePending().catch((error) => {
-        warn(`[dsh-mcp-studio] pending deletion prune failed: ${error instanceof Error ? error.message : String(error)}`)
+        warn(`[dsh-toolshed] pending deletion prune failed: ${error instanceof Error ? error.message : String(error)}`)
       })
     }, 100)
     // 不要为了这一趟让 Host 进程（或测试运行器）活着。
@@ -511,7 +511,7 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
       }
       catch (error) {
         queueReadError = error
-        warn(`[dsh-mcp-studio] pending deletion queue is unreadable: ${error instanceof Error ? error.message : String(error)}`)
+        warn(`[dsh-toolshed] pending deletion queue is unreadable: ${error instanceof Error ? error.message : String(error)}`)
       }
     }
     const queuedIds = new Set(queue.map(entry => entry.id))
@@ -820,7 +820,7 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
       queue = await readQueue()
     }
     catch (error) {
-      warn(`[dsh-mcp-studio] pending deletion queue is unreadable; sweep skipped: ${error instanceof Error ? error.message : String(error)}`)
+      warn(`[dsh-toolshed] pending deletion queue is unreadable; sweep skipped: ${error instanceof Error ? error.message : String(error)}`)
       return {
         results: { deleted: [], failed: [], dropped: [], kept: [] },
         totals: { queued: 0, deleted: 0, kept: 0, dropped: 0, freedBytes: 0 },
@@ -903,7 +903,7 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
       await writeQueue(keep)
     }
     catch (error) {
-      warn(`[dsh-mcp-studio] could not rewrite the pending deletion queue: ${error instanceof Error ? error.message : String(error)}`)
+      warn(`[dsh-toolshed] could not rewrite the pending deletion queue: ${error instanceof Error ? error.message : String(error)}`)
     }
     return {
       results: { deleted, failed, dropped, kept: keep.map(entry => entry.id) },
@@ -947,7 +947,7 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
           await writeQueue(kept)
       }
       catch (error) {
-        warn(`[dsh-mcp-studio] could not clear pending deletions after unarchive: ${error instanceof Error ? error.message : String(error)}`)
+        warn(`[dsh-toolshed] could not clear pending deletions after unarchive: ${error instanceof Error ? error.message : String(error)}`)
       }
     }
     return {

@@ -81,17 +81,22 @@ Copyright (c) 2026 deepseek-harness-desktop contributors
 
 ---
 
-## 本项目（dsh-mcp-studio）的改动
+## 本项目（dsh-toolshed）的改动
 
+- 本项目 fork 自 **[functy23/dsh-mcp-studio](https://github.com/functy23/dsh-mcp-studio)**（MIT，含
+  「No Commercial Secondary Development」附加条款），2026-11-13 更名 **dsh-toolshed** 独立立项；
+  上游作者与该仓库的全部版权声明继续适用，见上方 LICENSE 与附加条款。
 - 上游三个包的源码原样搬运，仅调整模块解析（`src/bridge/`，构建期映射旧裸包名）。
 - `src/panel/host/service/profile.ts`：补充 `DSH_PROFILE` / `DSH_PROFILE_DIR` / 启动参数探测，使其在 DSH Web / Desktop 上正确解析当前 profile。
-- 插件 id 与 HTTP 路由前缀改为 `dsh-mcp-studio`（`/dsh-mcp-studio/api/*`），以避免与上游插件双挂载、可共存。
+- 插件 id 与 HTTP 路由前缀为 `dsh-toolshed`（`/dsh-toolshed/api/*`），与上游插件 id 不同，可共存。
 - 移除对 Tauri 运行时的引用路径：Tauri 专属模块（invoke / listen / iframe 桥）保留在 vendor 中但不被任何入口引用，产物不会访问 `window.__TAURI__`。
 - 补回上游随包的 `skills/`（`skill-creator` + `find-skills`，与上游发布产物逐字节相同；
   `package.json` 的 `files` 同步补 `skills`），见上。
-- **1.1.0**：面板从三个 tab 扩到五个（新增「已归档」与「服务」）；`/host/restart` 的实现被换成本仓库维护者
-  自己那套桌面进程级重启（见上一节），构建新增第三个入口 `lib/restart-helper.js`；路由行数 13 → 18。
+- **1.1.0**（沿用上游版本号序列）：面板新增「已归档」与「服务」两个 tab；`/host/restart` 的实现被换成本仓库
+  维护者自己那套桌面进程级重启（见上一节），构建新增第三个入口 `lib/restart-helper.js`；路由行数 13 → 18。
 - **1.2.0**：取消「服务」页，重启改到标签页行最右侧（`components/restart-control.tsx`）；移除插件市场收编
   （上游 `dsh-tauri-panel-extension` 的 market tab 代码随 `src/panel` 一起搬运，但本仓库不再启用）。
+- **2.0.0**：更名 `dsh-toolshed`（包名、插件 id、路由前缀、client bundle id 全改），侧边栏入口
+  「扩展管理」改为「工具管理」。
 
 除上述改动外，界面与 host 逻辑版权归上游作者所有。

@@ -17,7 +17,7 @@
 import { build } from 'esbuild'
 import { mkdir, rm } from 'node:fs/promises'
 
-const id = 'dsh-mcp-studio'
+const id = 'dsh-toolshed'
 
 /**
  * The Tauri edition imported its own packages by bare specifier; map those onto the

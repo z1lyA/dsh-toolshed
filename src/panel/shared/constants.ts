@@ -1,1 +1,1 @@
-export const PLUGIN_ID = 'dsh-mcp-studio'
+export const PLUGIN_ID = 'dsh-toolshed'

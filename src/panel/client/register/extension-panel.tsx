@@ -30,7 +30,7 @@ export const extensionPanelFeature = defineRegister<ClientContext>((controller, 
       sessionSnapshot,
     )
     if (sessionId === undefined) {
-      console.warn('[dsh-mcp-studio] createSkill: no session available', {
+      console.warn('[dsh-toolshed] createSkill: no session available', {
         sessions: adapter.sessions?.list?.getSnapshot?.(),
         workspaces: adapter.workspaces?.list?.getSnapshot?.(),
       })

@@ -19,8 +19,8 @@ vi.mock('dsh-tauri', async (importOriginal) => {
   return { ...actual, DSH_HOME: home }
 })
 
-// 路由前缀随插件 id 走：搬运后是 /dsh-mcp-studio/api（原上游是 /api/desktop/dsh-tauri-panel-extension）
-const P = '/dsh-mcp-studio/api'
+// 路由前缀随插件 id 走：/dsh-toolshed/api（原上游是 /api/desktop/dsh-tauri-panel-extension）
+const P = '/dsh-toolshed/api'
 
 const routeKey = (kind: string, path: string): string => `${kind}\u0000${path}`
 

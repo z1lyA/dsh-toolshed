@@ -13,7 +13,7 @@ export const provider = defineService({
       .catch((error: unknown) => {
         void providerHooks.callHook('provider:error', error)
         const message = error instanceof Error ? error.message : String(error)
-        getCurrentHostInstance().logger.error(`dsh-mcp-studio: failed to mount filesystem skill provider: ${message}`)
+        getCurrentHostInstance().logger.error(`dsh-toolshed: failed to mount filesystem skill provider: ${message}`)
       })
     return providerRuntime.chain
   },

@@ -1,27 +1,29 @@
 <div align="center">
 
-<img src="assets/icon.png" alt="dsh-mcp-studio" width="128" />
+<img src="assets/icon.png" alt="dsh-toolshed" width="128" />
 
-# dsh-mcp-studio
+# dsh-toolshed 工具棚
 
-**DeepSeek Harness 的 MCP 服务与 Skills 管理器 —— Tauri 桌面版的扩展面板，整合成一个跨端插件。**
+**DeepSeek Harness 的工具面管理插件：MCP 服务、Skills、已归档会话，外加宿主重启 —— 一个侧边栏入口搞定。**
 
-[![dsh-mcp-studio](https://img.shields.io/badge/dsh--mcp--studio-DSH%20plugin-4d6bfe.svg)](https://github.com/functy23/dsh-mcp-studio)
+[![dsh-toolshed](https://img.shields.io/badge/dsh--toolshed-DSH%20plugin-4d6bfe.svg)](https://github.com/z1lyA/dsh-toolshed)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Top Language](https://img.shields.io/github/languages/top/functy23/dsh-mcp-studio?style=flat)](https://github.com/functy23/dsh-mcp-studio)
-[![Platform](https://img.shields.io/badge/platform-Web%20%7C%20Desktop-lightgrey.svg)](https://github.com/functy23/dsh-mcp-studio)
+[![Platform](https://img.shields.io/badge/platform-Web%20%7C%20Desktop-lightgrey.svg)](https://github.com/z1lyA/dsh-toolshed)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?logo=opensourceinitiative&logoColor=white)](https://opensource.org/licenses/MIT)
 
-[![Stars](https://img.shields.io/github/stars/functy23/dsh-mcp-studio?style=flat&logo=github)](https://github.com/functy23/dsh-mcp-studio/stargazers)
-[![Repo Size](https://img.shields.io/github/repo-size/functy23/dsh-mcp-studio?style=flat&logo=github)](https://github.com/functy23/dsh-mcp-studio)
-[![Contributors](https://img.shields.io/github/contributors/functy23/dsh-mcp-studio?color=ee8449&logo=githubsponsors)](https://github.com/functy23/dsh-mcp-studio/graphs/contributors)
-
-[Issues](https://github.com/functy23/dsh-mcp-studio/issues) • [Changelog](CHANGELOG.md) • [English](README_EN.md)
+[Issues](https://github.com/z1lyA/dsh-toolshed/issues) • [Changelog](CHANGELOG.md) • [English](README_EN.md) •
+Fork 自 [functy23/dsh-mcp-studio](https://github.com/functy23/dsh-mcp-studio)
 
 </div>
 
 ---
+
+> **为什么改名**：早期它是上游 `dsh-mcp-studio` 的 fork（只做 MCP / Skills）；后来并入了
+> [z1lyA/dsh-session-admin](https://github.com/z1lyA/dsh-session-admin) 的已归档会话管理与桌面进程级重启，
+> 功能面与身份都变了，npm 上的 `dsh-mcp-studio` 又属原作者、发不了同名包，于是以 **`dsh-toolshed`** 独立立项
+> （插件 id / 路由前缀 / 产物 id 全部换成新名，旧版需卸载后重装）。上游 MIT 与附加条款继续适用，见
+> [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## 📦 这是什么
 
@@ -35,7 +37,7 @@ Tauri 桌面版（[deepseek-harness-desktop](https://github.com/dsh-tauri-desk/d
 
 要装 MCP 管理，就得把这三个一起装上，而且只在 Tauri 发行版里可用。
 
-**dsh-mcp-studio 把它们整合成一个包**：上游源码原样搬运（`src/panel`、`src/vendor/dsh-tauri`、`src/vendor/dsh-tauri-ui`），
+**dsh-toolshed 把它们整合成一个包**：上游源码原样搬运（`src/panel`、`src/vendor/dsh-tauri`、`src/vendor/dsh-tauri-ui`），
 用构建期模块映射（`src/bridge`）把旧的裸包名 `dsh-tauri` / `dsh-tauri/client` / `dsh-tauri-ui/client` 指到本地文件，
 再补上通用化所需的最小改造 —— **界面本身一行 UI 都没重写**。
 
@@ -73,7 +75,8 @@ skills/                       ← 随包发布的技能（host 半按 package.js
 2. **profile 探测**（`src/panel/host/service/profile.ts`）：上游只认 `--profile` 开关（Tauri 壳会传），
    嵌入 Web / Desktop 后必须补上 `DSH_PROFILE` / `DSH_PROFILE_DIR` / 启动参数里的 `<DSH_HOME>/profiles/<name>`，
    否则 MCP 行会写错 profile。
-3. **独立标识**：插件 id 与路由前缀从 `dsh-tauri-panel-extension` 改为 `dsh-mcp-studio`（`/dsh-mcp-studio/api/*`），
+3. **独立标识**：插件 id 与路由前缀为 `dsh-toolshed`（`/dsh-toolshed/api/*`），与 Tauri 版插件、以及上游
+   `dsh-mcp-studio` 都不同，可共存互不覆盖。
    可与 Tauri 版共存、互不覆盖。
 
 此外还有面板行为修复（依赖新版核心的导航能力变化，见 [CHANGELOG.md](CHANGELOG.md)）：
@@ -98,8 +101,8 @@ Tauri 专属部分（`dsh-tauri/client` 的 invoke / listen / iframe 消息桥�
 装到你想用的那个 profile 上：
 
 ```sh
-dsh plugin --profile web     add dsh-mcp-studio@latest   # DSH Web 版
-dsh plugin --profile desktop add dsh-mcp-studio@latest   # DSH 桌面版
+dsh plugin --profile web     add dsh-toolshed@latest   # DSH Web 版（尚未发 npm 时用下面的 link 方式）
+dsh plugin --profile desktop add dsh-toolshed@latest   # DSH 桌面版
 ```
 
 包内声明了 `dsh.bundle.patch`，安装即自动挂载；host 半更新后重启一次 DSH，然后硬刷新浏览器（Cmd/Ctrl+Shift+R）。
@@ -123,14 +126,14 @@ dsh plugin --profile desktop add dsh-mcp-studio@latest   # DSH 桌面版
 ```sh
 pnpm install && pnpm build
 # ~/.dsh/profiles/<profile>/package.json
-#   "dependencies": { "dsh-mcp-studio": "link:/abs/path/to/dsh-mcp-studio" }
-#   "dsh": { "profile": { "bundles": [ ..., "dsh-mcp-studio" ] } }
+#   "dependencies": { "dsh-toolshed": "link:/abs/path/to/dsh-toolshed" }
+#   "dsh": { "profile": { "bundles": [ ..., "dsh-toolshed" ] } }
 pnpm install --dir ~/.dsh/profiles/<profile>
 ```
 
 ## 🧭 界面
 
-装好后侧边栏出现 **扩展**（Puzzle 图标），点开是三个 tab，标签页那一行的**最右侧**是刷新 + 重启服务：
+装好后侧边栏出现 **工具管理**（Puzzle 图标），点开是三个 tab，标签页那一行的**最右侧**是刷新 + 重启服务：
 
 | Tab | 能力 |
 | --- | --- |
@@ -184,7 +187,7 @@ Web / CLI 会如实显示「不可用」。重启会中断当前回合，请先�
 
 | 方法 | 路径 |
 | --- | --- |
-| GET | `/dsh-mcp-studio/api/skills`、`/api/mcp`、`/api/skill?name=`、`/api/roots`、`/api/import/scan`、`/api/archived`、`/api/host/restart` |
+| GET | `/dsh-toolshed/api/skills`、`/api/mcp`、`/api/skill?name=`、`/api/roots`、`/api/import/scan`、`/api/archived`、`/api/host/restart` |
 | POST | `/api/mcp`、`/api/mcp/toggle`、`/api/mcp/check`、`/api/mcp/copy`、`/api/skills/refresh`、`/api/skill`、`/api/skill/policy`、`/api/import/apply`、`/api/roots`、`/api/open/dir`、`/api/host/restart`、`/api/archive/plan`、`/api/archive/unarchive`、`/api/archive/pending/cancel` |
 | DELETE | `/api/mcp`、`/api/skill`、`/api/roots`、`/api/archive` |
 

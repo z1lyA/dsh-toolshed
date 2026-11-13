@@ -48,7 +48,7 @@ function writeProjectionCache(home: string, id: string): string {
 }
 
 function createWorld(): FakeWorld {
-  const home = mkdtempSync(join(tmpdir(), 'dsh-mcp-studio-sessions-'))
+  const home = mkdtempSync(join(tmpdir(), 'dsh-toolshed-sessions-'))
   dirs.push(home)
   writeFileSync(join(home, 'keep.txt'), 'untouched')
   return {
@@ -142,7 +142,7 @@ async function start(world: FakeWorld): Promise<string> {
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 }
 
-const P = '/dsh-mcp-studio/api'
+const P = '/dsh-toolshed/api'
 
 function jsonBody(body: unknown): RequestInit {
   return { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }

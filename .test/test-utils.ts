@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import process from 'node:process'
 
 /** 本进程测试专属的 DSH_HOME（带 pid，避免并行测试互相踩）。 */
-export const testDshHome = join(tmpdir(), `dsh-mcp-studio-test-home-${process.pid}`)
+export const testDshHome = join(tmpdir(), `dsh-toolshed-test-home-${process.pid}`)
 
 /** 清空并重建测试 DSH_HOME，返回该路径（beforeEach 里调一次即可拿到空目录）。 */
 export function resetTestDshHome(): string {

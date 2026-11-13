@@ -46,10 +46,10 @@ export function apply(ctx: HostContext, config?: Config): void {
     const archive = createArchiveAdmin(hub, sessionConfig)
     const restart = createRestartAdmin(hub, sessionConfig)
 
-    ctx.effect(() => startProvider(remountProvider), 'dsh-mcp-studio: skill provider')
+    ctx.effect(() => startProvider(remountProvider), 'dsh-toolshed: skill provider')
     ctx.effect(
       () => routes(hostCtx as unknown as HostContext, { profileDirPath, remountProvider, archive, restart }),
-      'dsh-mcp-studio: routes',
+      'dsh-toolshed: routes',
     )
     sweepPendingOnBoot(hostCtx, archive)
     prunePendingOnUnarchive(hostCtx, archive)
@@ -84,7 +84,7 @@ function sweepPendingOnBoot(ctx: HostContext, archive: ArchiveAdmin): void {
             try {
               if ((summary?.totals?.queued ?? 0) > 0) {
                 ctx.logger?.info?.(
-                  `[dsh-mcp-studio] pending deletions: queued=${summary.totals.queued} deleted=${summary.totals.deleted} `
+                  `[dsh-toolshed] pending deletions: queued=${summary.totals.queued} deleted=${summary.totals.deleted} `
                   + `kept=${summary.totals.kept} dropped=${summary.totals.dropped} freed=${summary.totals.freedBytes}`,
                 )
               }
@@ -94,7 +94,7 @@ function sweepPendingOnBoot(ctx: HostContext, archive: ArchiveAdmin): void {
             }
           }).catch((error) => {
             try {
-              ctx.logger?.warn?.(`[dsh-mcp-studio] pending deletion sweep failed: ${error instanceof Error ? error.message : String(error)}`)
+              ctx.logger?.warn?.(`[dsh-toolshed] pending deletion sweep failed: ${error instanceof Error ? error.message : String(error)}`)
             }
             catch {
               /* 同上 */
@@ -105,12 +105,12 @@ function sweepPendingOnBoot(ctx: HostContext, archive: ArchiveAdmin): void {
           disposed = true
           clearTimeout(timer)
         }
-      }, 'dsh-mcp-studio: pending sweep')
+      }, 'dsh-toolshed: pending sweep')
     })
   }
   catch (error) {
     try {
-      ctx.logger?.warn?.(`[dsh-mcp-studio] pending sweep not mounted: ${error instanceof Error ? error.message : String(error)}`)
+      ctx.logger?.warn?.(`[dsh-toolshed] pending sweep not mounted: ${error instanceof Error ? error.message : String(error)}`)
     }
     catch {}
   }
@@ -144,12 +144,12 @@ function prunePendingOnUnarchive(ctx: HostContext, archive: ArchiveAdmin): void 
             /* 已释放 */
           }
         }
-      }, 'dsh-mcp-studio: prune pending on workspace change')
+      }, 'dsh-toolshed: prune pending on workspace change')
     })
   }
   catch (error) {
     try {
-      ctx.logger?.warn?.(`[dsh-mcp-studio] workspace-change prune not mounted: ${error instanceof Error ? error.message : String(error)}`)
+      ctx.logger?.warn?.(`[dsh-toolshed] workspace-change prune not mounted: ${error instanceof Error ? error.message : String(error)}`)
     }
     catch {}
   }
