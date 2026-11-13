@@ -109,6 +109,13 @@ dsh plugin --profile desktop add dsh-mcp-studio@latest   # DSH 桌面版
 > **Tauri 版不在范围内**：Tauri 发行版有自己的原生扩展面板插件。本仓库只是把那三个包搬过来整合成
 > 跨端插件，产物里没有任何 Tauri 运行时依赖，也不反过来替换 Tauri 版的原生插件。
 
+> **不要与 `dsh-session-admin` 同时安装**：1.1.0 已包含它的全部能力（已归档删除、待删除队列、进程级重启）。
+> 两个插件会同时读改写同一个 `$DSH_HOME/session-admin/pending-deletions.json`，并重复注册 `workspace` 域的
+> `domain/changed` 监听。升级步骤：先把本包装成 `link:` 并确认新 tab 正常，再卸载旧插件
+> （`plugin_manager({ action: "remove_bundle", target: "dsh-session-admin" })`；若报 `bundle-in-use`，
+> 先从 profile 的 `dsh.profile.bundles` 去掉它、再删 `dependencies` 里的 `link:` 项，最后
+> `pnpm install --offline --dir <profile>` 收敛 lockfile）。
+
 本地开发（link）：
 
 ```sh

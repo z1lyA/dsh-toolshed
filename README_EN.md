@@ -101,6 +101,14 @@ dsh plugin --profile desktop add dsh-mcp-studio@latest   # DSH Desktop
 > vendors those three packages into one cross-profile plugin; the bundle carries no Tauri runtime dependency and
 > does not replace the Tauri edition's native plugins.
 
+> **Do not install this alongside `dsh-session-admin`** — 1.1.0 already contains its whole feature set (archived
+> session deletion, pending queue, process-level restart). Both plugins would read/modify the same
+> `$DSH_HOME/session-admin/pending-deletions.json` and register duplicate `domain/changed` listeners on the
+> `workspace` domain. Upgrade path: link this package in and confirm the new tabs, then remove the old one
+> (`plugin_manager({ action: "remove_bundle", target: "dsh-session-admin" })`; if it reports `bundle-in-use`,
+> drop it from `dsh.profile.bundles`, delete the `link:` entry from `dependencies`, then
+> `pnpm install --offline --dir <profile>`).
+
 Restart DSH once after a host-half update, then hard-refresh the browser.
 
 ## 🧭 UI
