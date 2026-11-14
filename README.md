@@ -133,42 +133,54 @@ pnpm install --dir ~/.dsh/profiles/<profile>
 
 ## 🧭 界面
 
-装好后侧边栏出现 **工具管理**（Puzzle 图标），点开是四个 tab，标签页那一行的**最右侧**是刷新 + 重启服务：
+装好后侧边栏出现 **工具管理**（Puzzle 图标），点开是四个 tab（顺序：技能 / 插件 / 会话 / MCP），
+标签页那一行的**最右侧**是刷新 + 重启服务：
 
 | Tab | 能力 |
 | --- | --- |
 | **技能** | 技能列表（按来源分组）、搜索、启用 / 停用、查看与编辑 SKILL.md、新建技能（在当前工作区开一条新对话并预填 `/skill-creator`）、删除、打开目录、刷新 |
-| **MCP** | 服务器列表（项目级 / 全局、启用状态、传输方式、URL / 命令）、新增与编辑表单、启用 / 停用、连接检查、复制片段、从其他 DSH profile 或 Claude / Cursor / Windsurf / VS Code 配置**导入扫描**、JSON 导出导入；写入后提示「需要重启」 |
+| **插件** | **按包（npm bundle）**列出当前 profile 的插件：图标 + 名称 + 一句话简介 + 版本 + 启停状态；`全部 / 第三方 / 官方` 三档筛选（默认第三方）、搜索（包名 / 标题 / 简介 / 包内模块名）、**包级与行级启用 / 停用**、展开看包里的 Loader 条目、失败后**撤销上次变更**；右上角「插件市场」直接跳到官方插件页的**发现** tab |
 | **会话** | 已归档会话列表（**会话名 + 短 id**、工作区、精确磁盘占用、文件数、子代理数）、全选 / 半选 / 单选、批量**取消归档**、批量**永久删除**（dry-run 计划 → 确认 → 执行）、**待删除**队列与取消 |
-| **插件** | 当前 profile 加载的**插件清单**（模块名 / entryId / 启停状态 / 存活阶段）、搜索、**行级启用 / 停用**、不可启停的原因（悬停即见）、失败后**撤销上次变更**；右上角「插件市场」按钮打开官方插件页 |
+| **MCP** | 服务器列表（项目级 / 全局、启用状态、传输方式、URL / 命令）、新增与编辑表单、启用 / 停用、连接检查、复制片段、从其他 DSH profile 或 Claude / Cursor / Windsurf / VS Code 配置**导入扫描**、JSON 导出导入；写入后提示「需要重启」 |
 | **右上角重启控件** | 刷新（重新判断能否重启）+ 重启服务（进程级）。不可重启时按钮禁用，鼠标悬停即显示原因：有运行中的会话 / 排队输入 / 后台任务，或当前不是桌面应用 |
 
 > 1.2.0 起**不再收编社区市场 `dshmarket`**；2.1.0 起的「插件市场」入口打开的是**官方插件页**
 > （`@deepseek-ai/dsh-plugin-market` / `dsh-client-ui-plugin-market` 只往那一页注册一个 `discover` tab，
-> 没有可复用的组件，所以本面板不重建它）。
+> 没有可复用的组件，所以本面板不重建它）。2.2.0 起该按钮还会**自动切到那一页的「发现」tab**。
 
 技能启停沿用上游策略：写 SKILL.md 的 `user-invocable` 策略位，不新增旁路状态。
 
 ### 🔌 插件与市场入口
 
-「插件」tab 是官方「插件」页的**最小只读投影 + 行级启停**，数据与动作都走官方 `pluginManager` 服务：
+#### 为什么「几百个插件」里你只装了个位数
 
-- 清单来自 `pluginManager.listPlugins()`（本机 profile 实测 227 条），一行一个 Loader 条目：
-  模块名（省略 `@deepseek-ai/` 前缀，全名在 `title`）、`entryId`、启停状态、存活阶段（active / failed / …）。
-- 启停走 `pluginManager.setPluginEnabled(entryId, enabled)`：官方服务负责**改写 profile 的
-  `cordis.patch.yml`**（保留注释与 `!!js` 表达式、原子写、文件锁），所以本插件不自己写 YAML。
-  结果原样透出四种结局：`applied`（带 hmr 的 profile 立即生效）/ `restart-required`（需要重启）/
+官方 `listPlugins()` 列的是 **Loader 条目**，不是包：DSH 把自己切成了两百多个 cordis 插件条目
+（本机实测 227 条，其中 `dsh-base` 一个包就声明了 87 条、`dsh-web-app` 96 条），而**你自己装的只有 6 个包**。
+所以这个 tab **以包为单位**展示（`listBundles()`），条目只在展开里出现；打开时的计数会写成
+「N 个包 · M 个条目」把这件事摆明，默认筛选就是**第三方**（`official === false`）。
+
+- 包的数据来自官方 `pluginManager.listBundles()`：`official`（官方维护 / 市场目录）、`installed`、`enabled`、
+  `version`、`availability`，以及**本地化展示元数据** `meta.title` / `meta.description` / `meta.icon`
+  （图标是包自带的 base64 data URL，超过 64 KiB 的不透传）。文案由运行时语言解析（`ctx.locale.resolveText`），
+  本插件不猜语言。
+- **包级启停**走 `setBundleEnabled(name, enabled)`（写 profile 的 `dsh.profile.bundles`）；
+  **行级启停**走 `setPluginEnabled(entryId, enabled)`（写 profile 的 `cordis.patch.yml`）。
+  两者都由官方服务负责落地：保留注释与 `!!js` 表达式、原子写、文件锁——本插件不自己写 YAML。
+- 结果原样透出四种结局：`applied`（带 hmr 的 profile 立即生效）/ `restart-required`（需要重启）/
   `overridden`（被更高优先级的 patch 覆盖）/ `failed`（附官方错误码与诊断）。
   **`failed` 时配置文件其实已经写了**，所以页面会保留一条「撤销上次变更」。
-- 不可启停的行会说明原因：`management-required`（插件管理本身所需）或 `unaddressable`
+- 不可启停的项目会说明原因：`management-required`（插件管理本身所需）或 `unaddressable`
   （当前 profile 的 patch 无法唯一定位这一项），与官方页面同一套文案。
+  **官方包的包级开关在本面板禁用**（那属于官方页的卸载 / 目录职责），官方包里的**行**仍可单独启停。
 - **不能在这里停用 `dsh-toolshed` 自己**：官方保护集里没有它，停掉面板会当场消失且没有恢复入口，
-  服务层直接回 409 `self-management`。
-- 当前部署没有 `pluginManager` 服务（没有 profile，或插件管理未启用）时如实回 503
+  服务层直接回 409 `self-management`（行级与包级都挡）。
+- 当前部署没有 `pluginManager` 服务（没有 profile，或 DSH < 0.2.2）时如实回 503
   `plugin-manager-unavailable`，页面显示「当前部署没有插件管理服务」，而不是装作空清单。
 
 「插件市场」按钮**不复刻**市场 UI：它按 `pluginNavigation.openList()` → `ctx.layout.selectPanel('plugins')`
-的顺序打开官方插件页（装了市场 bundle 时那里就有 `discover` tab）；两条都拿不到时按钮不渲染。
+的顺序打开官方插件页，然后**再点那一页的「发现」tab**（官方只暴露了 `openList` / `openBundle`，两者都强制
+停在「已安装」，所以这一步是 DOM 兜底：按 `SegmentedTabs` 的 `${tabsId}-<tabId>` 后缀或标签文本点击，
+命中不到就安静地停在「已安装」）。两条入口都拿不到时按钮不渲染。
 
 > **已知限制（易碎）**：为了把入口收敛到本面板，`register/sidebar-tweaks.ts` 会隐藏侧栏自带的
 > 「插件」「更多」两行。官方 `ctx.slots` 没有「隐藏/条件注册」能力、也不能反注册他人的槽条目，所以这是
@@ -219,14 +231,16 @@ Web / CLI 会如实显示「不可用」。重启会中断当前回合，请先�
 | 方法 | 路径 |
 | --- | --- |
 | GET | `/dsh-toolshed/api/skills`、`/api/mcp`、`/api/skill?name=`、`/api/roots`、`/api/import/scan`、`/api/archived`、`/api/plugins`、`/api/host/restart` |
-| POST | `/api/mcp`、`/api/mcp/toggle`、`/api/mcp/check`、`/api/mcp/copy`、`/api/skills/refresh`、`/api/skill`、`/api/skill/policy`、`/api/import/apply`、`/api/roots`、`/api/open/dir`、`/api/plugins/toggle`、`/api/host/restart`、`/api/archive/plan`、`/api/archive/unarchive`、`/api/archive/pending/cancel` |
+| POST | `/api/mcp`、`/api/mcp/toggle`、`/api/mcp/check`、`/api/mcp/copy`、`/api/skills/refresh`、`/api/skill`、`/api/skill/policy`、`/api/import/apply`、`/api/roots`、`/api/open/dir`、`/api/plugins/toggle`、`/api/plugins/bundle/toggle`、`/api/host/restart`、`/api/archive/plan`、`/api/archive/unarchive`、`/api/archive/pending/cancel` |
 | DELETE | `/api/mcp`、`/api/skill`、`/api/roots`、`/api/archive` |
 
-`defineRoutes` 按 `(kind, path)` 收敛，同一路径的多个方法只占一行 `webServer.register`：2.1.0 起共 **20** 行。
+`defineRoutes` 按 `(kind, path)` 收敛，同一路径的多个方法只占一行 `webServer.register`：2.2.0 起共 **21** 行。
 错误体统一是 `{ error, code }`（重启被挡住时多一个 `blockers` 数组），面板靠 `code` 分支。
 `/api/plugins` 在缺少官方 `pluginManager` 服务时回 503 `plugin-manager-unavailable`；
-`/api/plugins/toggle` 在「停用 dsh-toolshed 自己」时回 409 `self-management`，正常请求一律 200
-（`application: 'failed'` 也是 200 —— 那是业务结局，不是传输错误）。
+`/api/plugins/toggle` 与 `/api/plugins/bundle/toggle` 在「停用 dsh-toolshed 自己」时回 409 `self-management`，
+正常请求一律 200（`application: 'failed'` 也是 200 —— 那是业务结局，不是传输错误）。
+`GET /api/plugins` 返回 `{ bundles, plugins }`：`bundles` 是包级主视图，`plugins` 是扁平 Loader 条目
+（本机 227 条），只用于计数与搜索。
 
 ## 🛠 开发
 

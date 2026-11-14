@@ -117,47 +117,62 @@ Restart DSH once after a host-half update, then hard-refresh the browser.
 
 ## 🧭 UI
 
-The sidebar shows **工具管理 / Toolshed** (Puzzle icon) with four tabs, and the **top-right corner of the tab row** holds
-refresh + restart:
+The sidebar shows **工具管理 / Toolshed** (Puzzle icon) with four tabs (order: Skills / Plugins / Sessions / MCP), and
+the **top-right corner of the tab row** holds refresh + restart:
 
 - **Skills** (grouped list, search, enable/disable, view/edit SKILL.md, create — opens a new conversation in the
   current workspace with `/skill-creator` prefilled — delete, open folder, refresh),
+- **Plugins** (**by package (npm bundle)**: icon + name + one-line description + version + state; `All / Third-party /
+  Official` filter (third-party by default), search (package name, title, description, inner module names),
+  **package-level and row-level enable/disable**, expand to see the Loader rows, and **undo of the last change** when a
+  toggle fails; the **Plugin market** button opens the official Plugins page straight on its **Discover** tab),
+- **Sessions** (archived sessions — each row shows the **session title + short id**, see below),
 - **MCP** (list, add/edit, enable/disable, connection check, copy, import scanning, JSON export/import; a write shows
   a "restart needed" banner),
-- **Sessions** (archived sessions — each row shows the **session title + short id**, see below),
-- **Plugins** (the plugins this profile loaded — module name / entryId / enabled / fiber phase — with search,
-  **per-row enable/disable**, a reason on rows that cannot be toggled, and **undo of the last change** when a toggle
-  fails; the **Plugin market** button opens the official Plugins page),
 - **restart control (top-right)**: refresh (re-check whether a restart is possible) + restart service.
   When a restart is not possible the button is disabled and its tooltip lists the reason — running sessions, queued
   input, background jobs, or "not the desktop app".
 
 > Since 1.2.0 the **community market `dshmarket` is no longer embedded**. Since 2.1.0 the **Plugin market** button
 > opens the **official** Plugins page (`@deepseek-ai/dsh-plugin-market` / `dsh-client-ui-plugin-market` only register a
-> `discover` tab there and export no reusable component), so this panel does not rebuild that UI.
+> `discover` tab there and export no reusable component), so this panel does not rebuild that UI. Since 2.2.0 it also
+> switches that page to the **Discover** tab.
 
 ### 🔌 Plugins and the market entry
 
-The **Plugins** tab is a minimal projection of the official Plugins page plus per-row toggles; data and actions go
-through the official `pluginManager` service:
+#### Why "hundreds of plugins" when you installed a handful
 
-- The list comes from `pluginManager.listPlugins()` (227 rows on this machine). Each row is one Loader entry: module
-  name (with the `@deepseek-ai/` prefix shortened; full name in the `title`), `entryId`, enabled state and fiber phase.
-- Toggling calls `pluginManager.setPluginEnabled(entryId, enabled)`. The official service **rewrites the profile's
-  `cordis.patch.yml`** (keeping comments and `!!js` expressions, atomic write, file lock), so this plugin never writes
-  YAML itself. The outcome is surfaced verbatim: `applied` (immediate on a profile with hmr) / `restart-required` /
+The official `listPlugins()` lists **Loader entries**, not packages: DSH splits itself into a few hundred cordis plugin
+entries (227 on this machine — `dsh-base` alone declares 87 and `dsh-web-app` 96), while **you installed 6 packages**.
+So this tab is **package-oriented** (`listBundles()`); entries only appear when you expand a package. The header count
+reads "N packages · M entries" to make that explicit, and the filter defaults to **Third-party** (`official === false`).
+
+- Package data comes from the official `pluginManager.listBundles()`: `official` (shipped by DSH or listed in the market
+  catalog), `installed`, `enabled`, `version`, `availability`, plus the **localized display metadata**
+  `meta.title` / `meta.description` / `meta.icon` (the icon is a base64 data URL shipped by the package; anything above
+  64 KiB is not forwarded). Text is resolved in the runtime language (`ctx.locale.resolveText`) — this plugin never
+  guesses a language.
+- **Package toggles** use `setBundleEnabled(name, enabled)` (writes the profile's `dsh.profile.bundles`);
+  **row toggles** use `setPluginEnabled(entryId, enabled)` (writes the profile's `cordis.patch.yml`). Both are applied
+  by the official service: comments and `!!js` expressions preserved, atomic write, file lock — this plugin never
+  writes YAML itself.
+- The outcome is surfaced verbatim: `applied` (immediate on a profile with hmr) / `restart-required` /
   `overridden` (a higher-priority patch wins) / `failed` (with the official code and diagnostic).
   **A `failed` outcome still wrote the file**, so the page keeps an **undo the last change** action.
-- Rows that cannot be toggled say why: `management-required` (plugin management itself needs it) or `unaddressable`
-  (this profile's patch cannot address the row uniquely) — the same wording as the official page.
+- Items that cannot be toggled say why: `management-required` (plugin management itself needs it) or `unaddressable`
+  (this profile's patch cannot address the item uniquely) — the same wording as the official page.
+  **Package-level switches are disabled for official packages** (uninstall/catalog duties belong to the official page);
+  their **rows** can still be toggled individually.
 - **dsh-toolshed cannot be disabled from here**: it is not in the official protected set, and disabling it would make
-  the panel vanish with no way back, so the host refuses with 409 `self-management`.
-- Without a `pluginManager` service (no profile, or plugin management off) the route answers 503
-  `plugin-manager-unavailable` and the page says so instead of pretending the list is empty.
+  the panel vanish with no way back, so the host refuses with 409 `self-management` (both row and package level).
+- Without a `pluginManager` service (no profile, or DSH < 0.2.2) the route answers 503 `plugin-manager-unavailable` and
+  the page says so instead of pretending the list is empty.
 
 The **Plugin market** button does **not** reimplement the market: it opens the official Plugins page via
-`pluginNavigation.openList()`, falling back to `ctx.layout.selectPanel('plugins')`; if neither exists the button is not
-rendered.
+`pluginNavigation.openList()`, falling back to `ctx.layout.selectPanel('plugins')`, and then **clicks that page's
+Discover tab** (the official API only exposes `openList` / `openBundle`, both pinning the page to Installed, so this
+last step is a DOM fallback: the `${tabsId}-<tabId>` id suffix or the tab label; when it misses, the page simply stays
+on Installed). If neither entry point exists the button is not rendered.
 
 > **Known limitation (fragile)**: to funnel the entry points into this panel, `register/sidebar-tweaks.ts` hides the
 > sidebar's own **Plugins** and **More** rows. `ctx.slots` has no "hide / conditional registration" and cannot

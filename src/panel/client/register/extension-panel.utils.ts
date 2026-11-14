@@ -1,4 +1,13 @@
+import type { ResolveLocalizedText } from '../components/plugins-tab.types'
 import type { SessionCreator, SessionListSnapshot, WorkspaceListItem, WorkspaceListSnapshot } from './extension-panel.types'
+import {
+  DISCOVER_TAB_POLL_ATTEMPTS,
+  DISCOVER_TAB_POLL_INTERVAL_MS,
+  PLUGINS_DISCOVER_TAB_ID,
+  PLUGINS_TAB_SLOT,
+  TABLIST_SELECTOR,
+} from '../constants'
+import { resolveSlotLabel } from './sidebar-tweaks'
 
 function workspaceId(item: WorkspaceListItem): string | undefined {
   return item.workspaceId ?? item.id
@@ -169,22 +178,212 @@ export function chooseWorkspace(
 }
 
 /**
- * 「打开官方插件页」的入口（＝「插件市场」按钮的行为）。
+ * 本地化文案解析器（`ctx.locale.resolveText`）：类型面在组件 props 里，这里只负责按能力探查。
+ *
+ * 契约要求组件**不自己选语言**：`LocalizedText` 要么是字面量、要么是按语言 id 索引的映射，
+ * 选哪一门由运行时的活跃语言决定。这个成员在类型面里不保证存在（`LocaleRuntime` 只承诺
+ * `text` / `bind`），所以拿不到就返回 undefined，组件用 `en` 兜底而不是整页崩掉。
+ */
+export function resolveTextOf(ctx: unknown): ResolveLocalizedText | undefined {
+  const localeService = readService(ctx, 'locale')
+  const resolveText = readMember(localeService, 'resolveText')
+  if (resolveText === undefined)
+    return undefined
+  return (text) => {
+    try {
+      const resolved = resolveText.call(localeService, text)
+      return typeof resolved === 'string' ? resolved : ''
+    }
+    catch {
+      return ''
+    }
+  }
+}
+
+/** 「发现」tab 的定位信息：`tabId` 就是 `plugins.tab` 槽条目的 id（市场注册的是 `discover`）。 */
+export interface DiscoverTabTarget {
+  tabId: string
+  /** 槽条目的 label（字符串或函数求值后）：DOM 里 id 匹配失败时的第二选择器靠它，绝不写死中英文。 */
+  label?: string
+}
+
+/**
+ * 要点的那个 tab：优先 `id === 'discover'`（市场），否则取槽里第一个。
+ *
+ * 只读槽信息、不碰 DOM：调用点在**渲染期**（register/extension-panel.tsx 每次 render 都探一遍），
+ * 而 SSR 冒烟里没有 `document`。
+ */
+export function discoverTabTargetOf(ctx: unknown): DiscoverTabTarget | undefined {
+  const slots = readService(ctx, 'slots')
+  const entriesOfSlot = readMember(slots, 'entriesOfSlot')
+  if (entriesOfSlot === undefined)
+    return undefined
+  let entries: unknown
+  try {
+    entries = entriesOfSlot.call(slots, PLUGINS_TAB_SLOT)
+  }
+  catch {
+    // 半初始化 / 卸载中的槽服务可能抛：拿不到条目就只「打开页面」，不升级成错误。
+    return undefined
+  }
+  if (!Array.isArray(entries) || entries.length === 0)
+    return undefined
+  // 槽条目是各 kind 的联合，这里只读 `id` / `label` 两个公共字段（与 sidebar-tweaks 同一手法）。
+  const rows = entries as { options?: { id?: unknown, label?: unknown } }[]
+  const picked = rows.find(row => row?.options?.id === PLUGINS_DISCOVER_TAB_ID) ?? rows[0]
+  const tabId = picked?.options?.id
+  if (typeof tabId !== 'string' || tabId === '')
+    return undefined
+  return { tabId, label: resolveSlotLabel(picked?.options?.label) }
+}
+
+/** 补丁只用到「能点、能读属性」这两个面，单测给同形替身即可。 */
+type TabButtonLike = { click: () => void, getAttribute: (name: string) => string | null }
+/** 只用到 document 的两个查询面：单测因此不需要 jsdom。 */
+export type TabQueryRoot = Pick<Document, 'querySelector' | 'querySelectorAll'>
+
+function asTabButton(value: unknown): TabButtonLike | undefined {
+  if (value === null || value === undefined)
+    return undefined
+  const candidate = value as Partial<TabButtonLike>
+  return typeof candidate.click === 'function' && typeof candidate.getAttribute === 'function'
+    ? candidate as TabButtonLike
+    : undefined
+}
+
+/**
+ * 在 DOM 里找那个 tab 按钮。
+ *
+ * 官方 `SegmentedTabs` 给每个 tab 的 DOM id 是 `${tabsId}-<tabId>`，`tabsId` 来自 `useId()`
+ * （不可预知），所以只能用**后缀**匹配；面板的 id 是 `${tabsId}-<tabId>-panel`，不会误命中。
+ * 找不到再退到 tablist 里按 label 文本全等匹配（语言由运行时决定，不写死）。
+ */
+export function findDiscoverTabButton(root: TabQueryRoot, target: DiscoverTabTarget): TabButtonLike | undefined {
+  const byId = asTabButton(root.querySelector(`[id$="-${target.tabId}"]`))
+  if (byId !== undefined)
+    return byId
+  if (target.label === undefined)
+    return undefined
+  for (const tablist of root.querySelectorAll(TABLIST_SELECTOR)) {
+    for (const button of tablist.querySelectorAll('button')) {
+      if ((button.textContent ?? '').trim() !== target.label)
+        continue
+      const candidate = asTabButton(button)
+      if (candidate !== undefined)
+        return candidate
+    }
+  }
+  return undefined
+}
+
+/**
+ * 点完之后复查：官方 tab 按钮带 `aria-selected`，个别实现用 `data-state`。
+ *
+ * 两个属性**都不在**时按「已生效」处理：那是这一代 DOM 变了，我们无从判断——谎报失败比不校验更糟。
+ */
+export function discoverTabActive(button: TabButtonLike): boolean {
+  const selected = button.getAttribute('aria-selected')
+  if (selected !== null)
+    return selected === 'true'
+  const state = button.getAttribute('data-state')
+  if (state !== null)
+    return state === 'active'
+  return true
+}
+
+export type DiscoverTabOutcome = 'activated' | 'missing' | 'rejected'
+
+export function activateDiscoverTab(
+  root: TabQueryRoot,
+  target: DiscoverTabTarget,
+  report?: (message: string, detail?: unknown) => void,
+): DiscoverTabOutcome {
+  const button = findDiscoverTabButton(root, target)
+  if (button === undefined)
+    return 'missing'
+  try {
+    button.click()
+  }
+  catch {
+    return 'rejected'
+  }
+  if (discoverTabActive(button))
+    return 'activated'
+  report?.('[dsh-toolshed] plugins tab did not switch to discover; the page stays on "installed"', { tabId: target.tabId })
+  return 'rejected'
+}
+
+export interface DiscoverTabPollOptions {
+  /** 默认 `document`；单测给替身，SSR / 非浏览器环境直接放弃。 */
+  root?: TabQueryRoot
+  attempts?: number
+  intervalMs?: number
+  schedule?: (run: () => void, delayMs: number) => unknown
+  report?: (message: string, detail?: unknown) => void
+}
+
+/**
+ * 打开官方页之后「点发现」的那一步。
+ *
+ * 为什么轮询：官方页是**刚被 openList() 打开**的，React 还没把它挂上来；100 ms × 30 次
+ * 就是给它 3 s 的挂载时间。任何一步失败都静默降级（用户落在「已安装」，仍然可用），
+ * 只留一行 console.debug 作为现场诊断——按钮点了没反应是最难查的一类问题。
+ */
+export function activateDiscoverTabEventually(
+  target: DiscoverTabTarget | undefined,
+  options: DiscoverTabPollOptions = {},
+): void {
+  if (target === undefined)
+    return
+  const root = options.root ?? (typeof document === 'undefined' ? undefined : document)
+  if (root === undefined)
+    return
+  const schedule = options.schedule ?? ((run: () => void, delayMs: number) => setTimeout(run, delayMs))
+  const intervalMs = options.intervalMs ?? DISCOVER_TAB_POLL_INTERVAL_MS
+  let remaining = Math.max(1, options.attempts ?? DISCOVER_TAB_POLL_ATTEMPTS)
+
+  const tick = (): void => {
+    const outcome = activateDiscoverTab(root, target, options.report)
+    // 找到按钮就不再用后面的配额：点不动（rejected）是这代 DOM 变了，重试也不会变好。
+    if (outcome !== 'missing')
+      return
+    remaining -= 1
+    if (remaining <= 0) {
+      options.report?.('[dsh-toolshed] plugins tab never rendered; the market entry stops on "installed"', { tabId: target.tabId })
+      return
+    }
+    schedule(tick, intervalMs)
+  }
+  // 先等一拍再找：官方页此刻才被点开，立刻查只会白耗一次配额。
+  schedule(tick, intervalMs)
+}
+
+/**
+ * 「插件市场」入口（＝「插件市场」按钮的行为）。
  *
  * 降级顺序即语义，任何一步拿不到都静默降级、绝不抛：
  *   1. `ctx.get('pluginNavigation').openList()` —— 官方 entry-customization 用的正规入口
  *      （比 selectPanel 语义化，也能直达某个 bundle 详情）；
  *   2. `ctx.layout.selectPanel('plugins')` —— 官方「插件」页的 main key 恒为字符串 `plugins`；
  *   3. 都拿不到 → `undefined`，调用方**不渲染**按钮。
+ * 页面打开后再补一步「点发现 tab」（见 `activateDiscoverTabEventually`）：官方
+ * `pluginNavigation` 没有「打开 discover」的接口，只能走这条 DOM 兜底。
  *
  * 为什么包 try/catch：`selectPanel` 在对端没注册这个 main 面板时会抛错（ui-layout 的校验），
  * 而这里的调用点在点击回调里——抛出去只变成一条未捕获弹栈，用户看不到任何解释。
  */
 export function openMarketLauncherOf(ctx: unknown): (() => void) | undefined {
+  const target = discoverTabTargetOf(ctx)
+  const openDiscover = (): void => activateDiscoverTabEventually(target, { report: debugReport })
+
   const navigation = readService(ctx, 'pluginNavigation')
   const openList = readMember(navigation, 'openList')
-  if (openList !== undefined)
-    return () => invokeQuietly('pluginNavigation.openList', () => openList.call(navigation))
+  if (openList !== undefined) {
+    return () => {
+      invokeQuietly('pluginNavigation.openList', () => openList.call(navigation))
+      openDiscover()
+    }
+  }
 
   const layout = readService(ctx, 'layout')
   const selectPanel = readMember(layout, 'selectPanel')
@@ -194,7 +393,17 @@ export function openMarketLauncherOf(ctx: unknown): (() => void) | undefined {
   // 由 invokeQuietly 兜住抛错——宁可静默失败，也不要少一个本来能用的入口。
   if (mainPanelRegistered(ctx) === false)
     return undefined
-  return () => invokeQuietly('layout.selectPanel(plugins)', () => selectPanel.call(layout, 'plugins'))
+  return () => {
+    invokeQuietly('layout.selectPanel(plugins)', () => selectPanel.call(layout, 'plugins'))
+    openDiscover()
+  }
+}
+
+function debugReport(message: string, detail?: unknown): void {
+  if (detail === undefined)
+    console.debug(message)
+  else
+    console.debug(message, detail)
 }
 
 /**

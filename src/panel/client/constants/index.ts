@@ -33,6 +33,21 @@ export const SIDEBAR_ROW_SELECTOR = 'button'
 export const SIDEBAR_MORE_SELECTOR = 'button[aria-haspopup="menu"]'
 export const SIDEBAR_HIDDEN_ATTRIBUTE = 'data-toolshed-hidden'
 
+/**
+ * 官方「插件」页的 tab 槽与市场注册的 tab id。
+ *
+ * 为什么需要这些：官方 `pluginNavigation` 只有 `openList()` / `openBundle()`，两者都把页面强制切到
+ * `installed`，**没有**「打开 discover」的接口。市场只是往 `plugins.tab` 注册了一个 `id: 'discover'`
+ * 的 tab，所以「跳到发现」只能先打开官方页、再在 DOM 里点那个 tab（见 register/extension-panel.utils.ts）。
+ */
+export const PLUGINS_TAB_SLOT = 'plugins.tab'
+export const PLUGINS_DISCOVER_TAB_ID = 'discover'
+/** 官方 `SegmentedTabs` 的 tablist 角色；`[id$="-<tabId>"]` 匹配不到时的第二选择器。 */
+export const TABLIST_SELECTOR = '[role="tablist"]'
+/** 官方页是点开后才挂载的：100 ms × 30 次 ≈ 3 s，超过就认定「这代 DOM 变了」并静默放弃。 */
+export const DISCOVER_TAB_POLL_INTERVAL_MS = 100
+export const DISCOVER_TAB_POLL_ATTEMPTS = 30
+
 export const SKILL_CREATOR_DRAFT = '/skill-creator '
 export const SKILL_REFRESH_INTERVAL_MS = 300
 export const SKILL_REFRESH_TIMEOUT_MS = 5_000

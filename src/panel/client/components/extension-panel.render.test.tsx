@@ -20,12 +20,19 @@ import { RestartControl } from './restart-control'
 const t = locale.text
 
 describe('扩展面板 tag 行', () => {
-  it('四个标签页都在，重启控件在同一行的右侧（不再单开「服务」页）', () => {
+  it('四个标签页按「技能 / 插件 / 会话 / MCP」排序，重启控件在同一行的右侧（不再单开「服务」页）', () => {
     const html = renderToStaticMarkup(<ExtensionPanel createSkill={async () => {}} />)
 
     expect(html).toContain('role="tablist"')
-    for (const key of ['skillsTab', 'mcpTab', 'archiveTab', 'pluginsTab'] as const)
-      expect(html, key).toContain(t(key))
+    // 顺序是用户明确要求的，且 `rows[0]` 仍是技能（默认页不变）：按出现位置逐个递增断言。
+    const order = ['skillsTab', 'pluginsTab', 'archiveTab', 'mcpTab'] as const
+    let cursor = -1
+    for (const key of order) {
+      const at = html.indexOf(`>${t(key)}</button>`)
+      expect(at, key).toBeGreaterThan(-1)
+      expect(at, key).toBeGreaterThan(cursor)
+      cursor = at
+    }
     expect(html).not.toContain(t('serviceTab'))
 
     // 重启控件：刷新 + 重启服务，且落在 tablist 之后（同一行、最右侧）

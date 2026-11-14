@@ -1,5 +1,37 @@
 # Changelog
 
+## [2.2.0] — 2026-11-14
+
+**「插件」tab 改成以包（bundle）为单位 —— 回答「为什么我有两百多个插件」。**
+
+### Changed
+
+- **插件列表改成包级视图**。之前铺开的是官方 `listPlugins()` 的 **Loader 条目**（本机 227 条，其中 `dsh-base`
+  一个包就 87 条、`dsh-web-app` 96 条），铺开既分不清也管不过来。现在主视图是 `listBundles()` 的**包**：
+  每张卡片一张**图标 + 名称 + 一句话简介 + 版本 + 启停状态**（图标/文案来自官方的本地化展示元数据
+  `meta.icon` / `meta.title` / `meta.description`，超过 64 KiB 的图标不透传），包里的 Loader 条目收进**展开**里。
+  头部计数写成「N 个包 · M 个条目」，把「227 条 ≠ 227 个插件」这件事摆明。
+- **新增 `全部 / 第三方 / 官方` 三档筛选**，默认 **第三方**（判据是官方的 `BundleInfo.official`），
+  搜索同时匹配包内模块名与 `entryId`。
+- **新增包级启停**：`POST /api/plugins/bundle/toggle` → 官方 `setBundleEnabled()`（写 profile 的
+  `dsh.profile.bundles`）。官方包的包级开关在页面上**禁用**（卸载/目录属于官方页），官方包里的**行**仍可单独启停。
+  `GET /api/plugins` 返回 `{ bundles, plugins }`；路由行 20 → **21**。
+- **tab 顺序改为 技能 / 插件 / 会话 / MCP**（用户明确要求的显式排序；`rows[0]` 仍是技能，默认页不变）。
+- **「插件市场」按钮直达官方页的「发现」tab**：先 `pluginNavigation.openList()`（降级 `selectPanel('plugins')`），
+  再按 `SegmentedTabs` 的 `${tabsId}-<tabId>` 后缀或标签文本点到 `discover`；官方只暴露 `openList`/`openBundle`
+  且都会强制停在「已安装」，所以这一步是 DOM 兜底，命中不到就安静地停在「已安装」。
+
+### Fixed
+
+- **停用 `dsh-toolshed` 自己在两个层级都被拒绝**：行级与包级都回 409 `self-management`。
+- 插件页的行级开关重新按 `patchId` + `entryId` **同时**存在才可点：包被停用时它的行没有存活条目，
+  现在显示「包停用后该行不可单独启停」而不是一个点了会 `unknown-plugin` 的死开关。
+
+### Notes
+
+- **需要 DSH 0.2.2+**：宿主侧要求官方 `pluginManager` 同时具备 `listPlugins` / `setPluginEnabled` / `listBundles` /
+  `setBundleEnabled` 四个方法，更老的宿主整 tab 回 503 `plugin-manager-unavailable`（页面如实说明，不装空清单）。
+
 ## [2.1.0] — 2026-11-13
 
 ### Added

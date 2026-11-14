@@ -47,10 +47,17 @@ const present = [
   [client, '插件市场'],
   [client, 'pluginMarketHint'],
   [client, 'pluginUndo'],
+  // 2.2.0：插件 tab 改成以「包」为单位（图标 + 标题 + 一句话简介 + 官方/第三方筛选），
+  // 并且市场入口会直接点到官方页的「发现」tab
+  [client, 'pluginsIntroV2'],
+  [client, 'pluginOfficialManage'],
+  [client, 'pluginShowAll'],
+  [client, '/plugins/bundle/toggle'],
   // 侧栏「插件」「更多」两行的 DOM 兜底：标记属性与语义锚点都必须在产物里
   [client, 'data-toolshed-hidden'],
   [client, 'aria-haspopup'],
   [client, 'sidebar.panellist'],
+  [host, '/dsh-toolshed/api/plugins/bundle/toggle'],
   [host, '/dsh-toolshed/api/plugins'],
   [host, '/dsh-toolshed/api/plugins/toggle'],
   [host, 'plugin-manager-unavailable'],

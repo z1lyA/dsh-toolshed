@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import type { ResolveLocalizedText } from './plugins-tab.types'
 import { SegmentedControl } from 'dsh-tauri-ui/client'
 import { useEffect, useId, useState } from 'react'
 import { locale } from '../locales'
@@ -18,6 +19,12 @@ export interface ExtensionPanelProps {
    * 此时按钮不渲染（渲染一个点了没反应的市场按钮比没有更糟）。
    */
   openMarket?: () => void
+  /**
+   * 本地化文案解析器（`ctx.locale.resolveText`）。
+   *
+   * 同上：语言由运行时决定，组件只调用，不自己挑；拿不到时退回 `en`。
+   */
+  resolveText?: ResolveLocalizedText
 }
 
 interface ExtensionTab {
@@ -26,15 +33,16 @@ interface ExtensionTab {
   render: () => ReactElement
 }
 
-export function ExtensionPanel({ createSkill, openMarket }: ExtensionPanelProps): ReactElement {
+export function ExtensionPanel({ createSkill, openMarket, resolveText }: ExtensionPanelProps): ReactElement {
   const t = locale.text
   const tabsId = useId()
   const rows: ExtensionTab[] = [
+    // 顺序是用户明确要求的「技能 / 插件 / 会话 / MCP」：这是 AGENTS「新 tab 追加在末尾」
+    // 那条例外的唯一来源——`rows[0]` 仍是技能（默认页不变），插件从末尾挪到第二位。
     { id: 'skills', label: t('skillsTab'), render: () => <SkillsTab t={t} createSkill={createSkill} /> },
-    { id: 'mcp', label: t('mcpTab'), render: () => <McpTab t={t} /> },
+    { id: 'plugins', label: t('pluginsTab'), render: () => <PluginsTab t={t} openMarket={openMarket} resolveText={resolveText} /> },
     { id: 'archive', label: t('archiveTab'), render: () => <ArchiveTab t={t} /> },
-    // 新 tab 一律追加在末尾：`rows[0]` 是首屏默认页，插到前面会改掉所有人的默认页。
-    { id: 'plugins', label: t('pluginsTab'), render: () => <PluginsTab t={t} openMarket={openMarket} /> },
+    { id: 'mcp', label: t('mcpTab'), render: () => <McpTab t={t} /> },
   ]
   const initialId = rows[0]?.id ?? 'skills'
   const [requestedId, setRequestedId] = useState(initialId)

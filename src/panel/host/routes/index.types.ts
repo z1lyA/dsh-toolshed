@@ -48,6 +48,10 @@ export type {
  * （客户端 `apis/index.type.ts` 只认 `host/routes/index.types.ts` 一个入口）。
  */
 export type {
+  LocalizedTextView,
+  PluginBundleRowView,
+  PluginBundleToggleBody,
+  PluginBundleView,
   PluginRowView,
   PluginsListResponse,
   PluginToggleBody,
