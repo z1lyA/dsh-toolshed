@@ -286,62 +286,9 @@ export default b('extension', [
     lineHeight: '18px',
     color: secondary,
   }),
-  // 插件是「一行一条」的清单（227 行是常态）：单列、行内没有卡片网格，避免视觉上压过搜索框。
-  e('plugin-list', {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-    margin: '0',
-    padding: '0',
-    listStyle: 'none',
-  }),
-  e('plugin-row', {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    minWidth: '0',
-    border: `1px solid ${border}`,
-    borderRadius: '10px',
-    background: layer3,
-    padding: '8px 12px',
-  }, [
-    c('&:hover', { background: hover }),
-  ]),
-  e('plugin-row-main', {
-    flex: '1',
-    minWidth: '0',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
-  }),
-  e('plugin-row-name', {
-    minWidth: '0',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-    fontSize: '13px',
-    lineHeight: '20px',
-    fontWeight: '600',
-    fontFamily: 'var(--ds-font-family-code)',
-  }),
-  e('plugin-row-id', {
-    minWidth: '0',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-    fontSize: '11px',
-    lineHeight: '16px',
-    color: tertiary,
-    fontFamily: 'var(--ds-font-family-code)',
-  }),
-  e('plugin-row-tags', {
-    flex: 'none',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    flexWrap: 'wrap',
-  }),
-  // 包级卡片（2.2.0 起的主视图）：图标 + 名称 + 一句话简述 + 开关，展开后才是 Loader 条目。
+  // 插件页以「包」为单位：一个包一张卡片（图标 + 名称 + 一句话简介），条目只在官方页看。
+  // v1/v2 的 plugin-list / plugin-row* 一族已随「不再展示 Loader 条目」删除——别再加回来。
+  // 包级卡片（2.3.0 起的主视图）：图标 + 标题 + 一句话简介 + 版本 + 状态 + 包级开关，不再展开内部模块。
   e('plugin-toolbar', {
     display: 'flex',
     alignItems: 'center',
@@ -397,45 +344,17 @@ export default b('extension', [
     gap: '6px',
     flexWrap: 'wrap',
   }),
-  // 标题本身是展开按钮：清掉原生按钮外观，保留可聚焦语义（键盘能展开）。
-  e('plugin-card-title', {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '4px',
-    maxWidth: '100%',
-    margin: '0',
-    padding: '0',
-    border: 'none',
-    background: 'transparent',
-    color: primary,
-    font: 'inherit',
-    fontSize: '14px',
-    lineHeight: '20px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    textAlign: 'left',
-  }, [
-    c('&:focus-visible', {
-      outline: 'none',
-      boxShadow: `0 0 0 2px color-mix(in srgb,${business} 30%,transparent)`,
-      borderRadius: '4px',
-    }),
-  ]),
+  // 标题从「展开按钮」变成纯文本后，字号/字重必须自己带：原来那些样式挂在按钮上。
   e('plugin-card-name', {
     minWidth: '0',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
+    fontSize: '14px',
+    lineHeight: '20px',
+    fontWeight: '600',
+    color: primary,
   }),
-  // 箭头只做视觉提示：展开态由整行可点决定，所以用旋转（data-expanded 挂在 svg 自己身上，
-  // 避免依赖「祖先的后代选择器」这种在 cssr 里表达不清的写法）。
-  e('plugin-card-chevron', {
-    flex: 'none',
-    transition: 'transform .15s ease',
-    color: tertiary,
-  }, [
-    c('&[data-expanded="true"]', { transform: 'rotate(180deg)' }),
-  ]),
   e('plugin-card-version', {
     flex: 'none',
     fontSize: '11px',
@@ -468,15 +387,6 @@ export default b('extension', [
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
     fontFamily: 'var(--ds-font-family-code)',
-  }),
-  e('plugin-card-rows', {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-    margin: '6px 0 0',
-    padding: '8px 0 0',
-    listStyle: 'none',
-    borderTop: `1px solid ${border}`,
   }),
   e('plugin-empty', {
     display: 'flex',

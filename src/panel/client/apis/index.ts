@@ -160,13 +160,6 @@ export function getPlugins(options?: FetchOptions) {
 // `...jsonError` 是必需的：要靠 code 区分 409 `self-management` 与 503 `plugin-manager-unavailable`，
 // 默认的 onResponseError 只留一句「请求失败 (409)」，页面无法给出可执行的下一步。
 /** @method post */
-export function postPluginToggle(body: Types.PluginToggleBody, options?: FetchOptions) {
-  return ofetch<Types.PluginToggleResponse>("/plugins/toggle", { baseURL, method: "post", body, ...jsonError, ...options });
-}
-
-// 包级启停与行级共用 `PluginToggleResponse`：官方的 `ChangeResult.application` 四种结局对两者都成立，
-// 页面（尤其撤销）只需要认一套口径。
-/** @method post */
 export function postPluginBundleToggle(body: Types.PluginBundleToggleBody, options?: FetchOptions) {
   return ofetch<Types.PluginToggleResponse>("/plugins/bundle/toggle", { baseURL, method: "post", body, ...jsonError, ...options });
 }

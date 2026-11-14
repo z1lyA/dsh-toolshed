@@ -2,6 +2,7 @@ import type { ClientContext } from 'dsh-tauri/client'
 import { defineRegister } from 'dsh-tauri/client'
 import {
   SIDEBAR_HIDDEN_ATTRIBUTE,
+  SIDEBAR_MAIN_SLOT,
   SIDEBAR_MORE_SELECTOR,
   SIDEBAR_PANELLIST_ANCHOR,
   SIDEBAR_PANELLIST_NAV_SELECTOR,
@@ -11,7 +12,7 @@ import {
 } from '../constants'
 
 /**
- * 隐藏侧栏自带的「插件」「更多」两行。
+ * 隐藏侧栏自带的「插件」行、并在「没有入口被取消固定」时顺带藏掉「更多」。
  *
  * 为什么只能改 DOM（spike-client §3）：`ctx.slots` 的注册项没有 `when/hidden/disabled`，
  * `registrant` 只是诊断标签，disposer 归注册者、不能反注册别人的条目；pins 那条路还被官方
@@ -19,7 +20,13 @@ import {
  * 所以照 `vendor-archive/.../register/obstructions.ts` 的既有做法：先存原值、再
  * `setProperty('display','none','important')`，dispose 时逐字恢复。
  *
- * 全程 fail-open：定位不到就什么都不做。最坏结果是「藏不掉」，绝不会炸页面。
+ * **「更多」不能无条件藏**（用户已经踩过一次）：官方 sidebar 的行过滤是
+ * `id === 'plugins' || !hasEntryActions || !unpinned.includes(id)`，被取消固定的入口**只出现在
+ * 「更多」菜单里**并可在那里重新固定。藏掉「更多」= 把入口关在门后，而固定状态是**内存态**
+ * （刷新才回来）。因此这里的规则是：只有当「渲染出来的行数 ≥ 已注册的面板数」——也就是一个都没被
+ * 取消固定——才藏；一旦有入口不见了，「更多」自动重新出现，保证永远有回收口。
+ *
+ * 全程 fail-open：定位不到 / 数不出来就什么都不做。最坏结果是「藏不掉」，绝不会炸页面。
  */
 
 /** 隐藏逻辑真正用到的 style 面（单测用同形替身即可覆盖 fail-open 与恢复）。 */
@@ -77,8 +84,38 @@ export function findPanellistNav(root: Pick<Document, 'querySelectorAll'>): Elem
 }
 
 /**
- * 要隐藏的两行：官方「插件」行（按运行时反查出来的 label **全等**匹配）与「更多」
- * （`aria-haspopup="menu"`，跨语言唯一）。
+ * 数一数 nav 里到底渲染了几个面板行。
+ *
+ * 判断依据是结构而不是类名：每个面板行是 nav 的一个**子元素**（官方 `PanelRow` 外面那层 div），
+ * 而「更多」是唯一含 `aria-haspopup="menu"` 的那个子元素——跳过它，剩下的就是行。
+ * 这样不依赖 `wtg9ga_*` 这类构建哈希类名，也不数按钮（每行还带一个取消固定的 aria-label 按钮）。
+ */
+export function countPanelRows(nav: Element): number {
+  let count = 0
+  for (const child of Array.from(nav.children)) {
+    if (child.querySelector(SIDEBAR_MORE_SELECTOR) !== null)
+      continue
+    if (child.querySelector(SIDEBAR_ROW_SELECTOR) !== null)
+      count += 1
+  }
+  return count
+}
+
+/**
+ * 「更多」能不能藏。
+ *
+ * 只有渲染出来的行数 ≥ 已注册的面板数（= 没有任何入口被取消固定）时才藏。
+ * 拿不到注册数就**不藏**：这是 fail-open 里安全的那一侧——多一行「更多」只是碍眼，
+ * 少了它就是入口找不回来。
+ */
+export function shouldConcealMore(rowCount: number, registeredCount: number | undefined): boolean {
+  if (registeredCount === undefined || registeredCount <= 0)
+    return false
+  return rowCount >= registeredCount
+}
+
+/**
+ * 要隐藏的目标：官方「插件」行（按运行时反查出来的 label **全等**匹配），以及按条件藏的「更多」。
  *
  * 命中 0 个返回空数组（fail-open）；同一目标命中多个时只取第一个并告警，不做批量隐藏
  * ——多命中通常意味着官方 DOM 变了，批量隐藏有误伤风险。
@@ -86,6 +123,7 @@ export function findPanellistNav(root: Pick<Document, 'querySelectorAll'>): Elem
 export function findSidebarRowTargets(
   root: Pick<Document, 'querySelectorAll'>,
   pluginLabel: string | undefined,
+  concealMore: boolean,
   report?: Report,
 ): HTMLElement[] {
   const nav = findPanellistNav(root)
@@ -102,9 +140,11 @@ export function findSidebarRowTargets(
       targets.push(matched[0] as HTMLElement)
   }
 
-  const more = nav.querySelector(SIDEBAR_MORE_SELECTOR)
-  if (more !== null)
-    targets.push(more as HTMLElement)
+  if (concealMore) {
+    const more = nav.querySelector(SIDEBAR_MORE_SELECTOR)
+    if (more !== null)
+      targets.push(more as HTMLElement)
+  }
 
   return targets
 }
@@ -167,6 +207,22 @@ export const sidebarTweaksFeature = defineRegister<ClientContext>((controller, c
     }
   }
 
+  /**
+   * 已注册的面板数（= 侧栏本该有的行数）。
+   *
+   * 用 `main` 槽的条目数：侧栏的行就是从这份元数据投影出来的，行数少了只可能是因为有入口被取消固定。
+   * 读不到就返回 undefined，`shouldConcealMore` 会据此保守地不藏「更多」。
+   */
+  const countRegisteredPanels = (): number | undefined => {
+    try {
+      const entries = ctx.slots?.entriesOfSlot?.(SIDEBAR_MAIN_SLOT)
+      return Array.isArray(entries) ? entries.length : undefined
+    }
+    catch {
+      return undefined
+    }
+  }
+
   const reconcile = (): void => {
     if (controller.isDisposed())
       return
@@ -177,10 +233,15 @@ export const sidebarTweaksFeature = defineRegister<ClientContext>((controller, c
     }
 
     const label = resolvePluginLabel()
-    const targets = findSidebarRowTargets(document, label, report)
+    // 「更多」要按当前行数现算：刚取消固定一个入口时，它必须立刻回来当回收口。
+    const nav = findPanellistNav(document)
+    const concealMore = nav === null
+      ? false
+      : shouldConcealMore(countPanelRows(nav), countRegisteredPanels())
+    const targets = findSidebarRowTargets(document, label, concealMore, report)
     if (targets.length !== reportedCount) {
       reportedCount = targets.length
-      report(`[dsh-toolshed] sidebar rows hidden: ${targets.length}`, { plugins: label })
+      report(`[dsh-toolshed] sidebar rows hidden: ${targets.length}`, { plugins: label, concealMore })
     }
     concealSidebarRows(targets, previous)
   }

@@ -49,12 +49,9 @@ export type {
  */
 export type {
   LocalizedTextView,
-  PluginBundleRowView,
   PluginBundleToggleBody,
   PluginBundleView,
-  PluginRowView,
   PluginsListResponse,
-  PluginToggleBody,
   PluginToggleResponse,
 } from '../service/plugins.types'
 

@@ -52,7 +52,6 @@ const EXPECTED_ROUTES: ReadonlyArray<readonly [string, string]> = [
   ['GET', `${P}/host/restart`],
   ['POST', `${P}/host/restart`],
   ['GET', `${P}/plugins`],
-  ['POST', `${P}/plugins/toggle`],
   ['POST', `${P}/plugins/bundle/toggle`],
 ]
 
@@ -80,21 +79,16 @@ const SKILL = {
 }
 
 /**
- * 假 pluginManager：字段形状照官方 `PluginInfo` / `BundleInfo`（可启停行 / 受保护行 / 本面板自己那一行，
- * 一个第三方包 + 一个官方包），并记下每次启停的入参，用来断言「409 拒绝时没有真的去写」。
+ * 假 pluginManager：字段形状照官方 `BundleInfo`（一个第三方包 + 一个官方包），
+ * 并记下每次启停的入参，用来断言「409 拒绝时没有真的去写」。
+ *
+ * 只实现 `listBundles` / `setBundleEnabled`：服务层鸭子类型只认这两个（老宿主的条目级方法不再需要）。
  */
 function pluginManagerStub(): {
   pluginManager: unknown
-  calls: Array<{ entryId: string, enabled: boolean }>
   bundleCalls: Array<{ name: string, enabled: boolean }>
 } {
-  const calls: Array<{ entryId: string, enabled: boolean }> = []
   const bundleCalls: Array<{ name: string, enabled: boolean }> = []
-  const rows = [
-    { entryId: 'include:bash-sandbox', moduleName: '@deepseek-ai/dsh-pwsh-sandbox', enabled: true, fiberPhase: 'active', patchId: 'bash-sandbox' },
-    { entryId: 'include:hmr', moduleName: '@deepseek-ai/dsh-hmr', enabled: true, fiberPhase: 'active', readOnlyReason: 'management-required' },
-    { entryId: 'include:dsh-toolshed', moduleName: 'dsh-toolshed', enabled: true, fiberPhase: 'active', patchId: 'dsh-toolshed' },
-  ]
   // 故意把官方包排在前面：排序在宿主做，响应里必须变成「第三方在前」。
   const bundles = [
     {
@@ -103,7 +97,6 @@ function pluginManagerStub(): {
       installed: true,
       enabled: true,
       availability: 'installation',
-      rows: [{ rowId: 'include:hmr', moduleName: '@deepseek-ai/dsh-hmr', entryId: 'include:hmr' }],
     },
     {
       name: 'dsh-toolshed',
@@ -111,25 +104,18 @@ function pluginManagerStub(): {
       installed: true,
       enabled: true,
       availability: 'profile',
-      version: '2.2.0',
+      version: '2.3.0',
       meta: {
         title: { en: 'Dsh Toolshed', zh: '工具箱' },
         description: { en: 'Panel tweaks', zh: '面板增强' },
         icon: 'data:image/png;base64,AAAA',
       },
       description: 'toolshed manifest description',
-      rows: [{ rowId: 'include:dsh-toolshed', moduleName: 'dsh-toolshed', entryId: 'include:dsh-toolshed' }],
     },
   ]
   return {
-    calls,
     bundleCalls,
     pluginManager: {
-      listPlugins: async () => rows,
-      setPluginEnabled: async (entryId: string, enabled: boolean) => {
-        calls.push({ entryId, enabled })
-        return { changed: true, application: 'applied', stage: 'enable', target: entryId, enabled }
-      },
       listBundles: async () => bundles,
       setBundleEnabled: async (name: string, enabled: boolean) => {
         bundleCalls.push({ name, enabled })
@@ -355,7 +341,6 @@ describe('能力管理器路由声明', () => {
       ['DELETE', `${P}/roots`, {}, 'id is required'],
       ['POST', `${P}/roots`, { kind: 'zip' }, 'kind must be local or git'],
       ['POST', `${P}/open/dir`, {}, 'target is required'],
-      ['POST', `${P}/plugins/toggle`, {}, 'entryId and enabled are required'],
       ['POST', `${P}/plugins/bundle/toggle`, {}, 'name and enabled are required'],
     ]
     for (const [method, path, body, error] of cases) {
@@ -418,34 +403,29 @@ describe('能力管理器路由声明', () => {
     dispose()
   })
 
-  it('gET /plugins 与 POST /plugins/toggle 走官方 pluginManager（200 列出、200 透出 application）', async () => {
-    const { pluginManager, calls } = pluginManagerStub()
+  it('gET /plugins 只给 bundles（第三方在前），响应里没有 plugins / rows', async () => {
+    const { pluginManager } = pluginManagerStub()
     const { base, dispose } = await start({ pluginManager })
 
     const listed = await fetch(`${base}${P}/plugins`)
     expect(listed.status).toBe(200)
-    const inventory = await listed.json() as { bundles: Array<Record<string, unknown>>, plugins: unknown[] }
-    // 双清单：包级主视图（第三方在前、已 join 行状态）+ 扁平条目（页面只用来计数/搜索）。
-    expect(inventory.bundles).toEqual([
+    const body = await listed.json() as { bundles: Array<Record<string, unknown>> }
+
+    // 这个 tab 只讲包：顶层只有 bundles，包里没有行级字段。
+    expect(Object.keys(body)).toEqual(['bundles'])
+    expect(body).not.toHaveProperty('plugins')
+    expect(body.bundles).toEqual([
       {
         name: 'dsh-toolshed',
         official: false,
         installed: true,
         enabled: true,
         availability: 'profile',
-        version: '2.2.0',
+        version: '2.3.0',
         title: { en: 'Dsh Toolshed', zh: '工具箱' },
         description: { en: 'Panel tweaks', zh: '面板增强' },
         icon: 'data:image/png;base64,AAAA',
         manifestDescription: 'toolshed manifest description',
-        rows: [{
-          rowId: 'include:dsh-toolshed',
-          moduleName: 'dsh-toolshed',
-          entryId: 'include:dsh-toolshed',
-          enabled: true,
-          fiberPhase: 'active',
-          patchId: 'dsh-toolshed',
-        }],
       },
       {
         name: '@deepseek-ai/dsh-hmr',
@@ -453,46 +433,10 @@ describe('能力管理器路由声明', () => {
         installed: true,
         enabled: true,
         availability: 'installation',
-        rows: [{
-          rowId: 'include:hmr',
-          moduleName: '@deepseek-ai/dsh-hmr',
-          entryId: 'include:hmr',
-          enabled: true,
-          fiberPhase: 'active',
-          readOnlyReason: 'management-required',
-        }],
       },
     ])
-    expect(inventory.plugins).toEqual([
-      { entryId: 'include:bash-sandbox', moduleName: '@deepseek-ai/dsh-pwsh-sandbox', enabled: true, fiberPhase: 'active', patchId: 'bash-sandbox' },
-      { entryId: 'include:hmr', moduleName: '@deepseek-ai/dsh-hmr', enabled: true, fiberPhase: 'active', readOnlyReason: 'management-required' },
-      { entryId: 'include:dsh-toolshed', moduleName: 'dsh-toolshed', enabled: true, fiberPhase: 'active', patchId: 'dsh-toolshed' },
-    ])
-
-    const toggled = await fetch(`${base}${P}/plugins/toggle`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ entryId: 'include:bash-sandbox', enabled: false }),
-    })
-    expect(toggled.status).toBe(200)
-    expect(await toggled.json()).toEqual({ ok: true, application: 'applied', changed: true })
-    expect(calls).toEqual([{ entryId: 'include:bash-sandbox', enabled: false }])
-
-    dispose()
-  })
-
-  it('pOST /plugins/toggle 拒绝停用 dsh-toolshed 自己（409 self-management，且没有真的去写）', async () => {
-    const { pluginManager, calls } = pluginManagerStub()
-    const { base, dispose } = await start({ pluginManager })
-
-    const response = await fetch(`${base}${P}/plugins/toggle`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ entryId: 'include:dsh-toolshed', enabled: false }),
-    })
-    expect(response.status).toBe(409)
-    expect(await response.json()).toMatchObject({ code: 'self-management' })
-    expect(calls).toEqual([])
+    for (const bundle of body.bundles)
+      expect(bundle).not.toHaveProperty('rows')
 
     dispose()
   })

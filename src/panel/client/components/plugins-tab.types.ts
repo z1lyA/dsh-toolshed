@@ -1,4 +1,4 @@
-import type { LocalizedTextView, PluginBundleRowView, PluginBundleView } from '../apis/index.type'
+import type { LocalizedTextView, PluginBundleView } from '../apis/index.type'
 import type { Translate } from '../locales/index.types'
 
 /**
@@ -30,31 +30,19 @@ export interface PluginBundleCardProps {
   bundle: PluginBundleView
   resolveText?: ResolveLocalizedText
   busy: boolean
-  /** 展开状态由列表持有（同一时刻可以展开多个包，不能放进卡片内部 state）。 */
-  expanded: boolean
-  onToggleExpanded: () => void
   onToggleBundle: (bundle: PluginBundleView) => void
-  onToggleRow: (row: PluginBundleRowView) => void
-}
-
-export interface PluginRowItemProps {
-  t: Translate
-  row: PluginBundleRowView
-  busy: boolean
-  onToggle: (row: PluginBundleRowView) => void
 }
 
 /**
- * 撤销记录：只保留最近一次变更，包级与行级共用一份。
+ * 撤销记录：只保留最近一次**包级**变更。
  *
- * `kind` + `id` 而不是 v1 的单个 `entryId`：包级要回滚的是包名、行级是 Loader 条目 id，
- * 两者的反向调用是不同的接口。
+ * 行级启停已随条目列表一起移除（2.3.0），所以这里不再需要 `kind` 判别——只有一种反向调用，
+ * 少一个字段就少一种「记录了却回滚到别的接口」的可能。
  */
 export interface PluginUndoRecord {
-  kind: 'bundle' | 'row'
-  /** 包名（bundle）或 Loader 条目 id（row）。 */
-  id: string
-  /** 展示用的短名：包名，或省略 `@deepseek-ai/` 前缀的模块名。 */
+  /** 包名，反向调用 `postPluginBundleToggle` 用它定位。 */
+  name: string
+  /** banner 上展示用的名字。 */
   label: string
   /** 要回滚到的那一侧。 */
   previousEnabled: boolean

@@ -1,25 +1,17 @@
 import type { ReactElement } from 'react'
-import type { LocalizedTextView, PluginBundleRowView, PluginBundleView, PluginsListResponse, PluginToggleResponse } from '../apis/index.type'
+import type { LocalizedTextView, PluginBundleView, PluginsListResponse, PluginToggleResponse } from '../apis/index.type'
 import type { Translate } from '../locales/index.types'
 import type {
   PluginBundleCardProps,
   PluginFilter,
-  PluginRowItemProps,
   PluginsTabProps,
   PluginUndoRecord,
   ResolveLocalizedText,
 } from './plugins-tab.types'
-import { Button, ChevronDown, Icon, Input, Puzzle, SegmentedControl, StateDot, Switch, Tag } from 'dsh-tauri-ui/client'
+import { Button, Icon, Input, Puzzle, SegmentedControl, StateDot, Switch, Tag } from 'dsh-tauri-ui/client'
 import { useEffect, useMemo, useState } from 'react'
-import { ApiError, getPlugins, postPluginBundleToggle, postPluginToggle } from '../apis'
+import { ApiError, getPlugins, postPluginBundleToggle } from '../apis'
 import { useTimers } from '../hooks/use-timers'
-
-/** 官方模块名有统一前缀，行内一律省略（全名留在 title）。 */
-const MODULE_PREFIX = '@deepseek-ai/'
-
-function shortModuleName(moduleName: string): string {
-  return moduleName.startsWith(MODULE_PREFIX) ? moduleName.slice(MODULE_PREFIX.length) : moduleName
-}
 
 /**
  * 本地化文案的兜底解析。
@@ -67,18 +59,16 @@ function bundleMatchesFilter(bundle: PluginBundleView, filter: PluginFilter): bo
 }
 
 /**
- * 搜索面：包名、包标题、包简介、以及包内每一条 Loader 条目的 moduleName / entryId。
+ * 搜索面只有包本身：包名、标题、简介。
  *
- * 为什么带包内条目：用户常记得的是条目名（「有个 pwsh sandbox」），而那是包里的行、不是包名。
+ * 不再匹配包内模块名：这一页的可见对象只有包，搜得到却看不见的东西是最难解释的一类命中
+ * （条目由官方「插件」页负责）。
  */
 function bundleMatchesQuery(bundle: PluginBundleView, needle: string, resolveText?: ResolveLocalizedText): boolean {
   if (needle === '')
     return true
-  const haystack = [bundle.name, bundleTitleOf(bundle, resolveText), bundleDescriptionOf(bundle, resolveText)]
-  if (haystack.some(value => value.toLowerCase().includes(needle)))
-    return true
-  return bundle.rows.some(row => row.moduleName.toLowerCase().includes(needle)
-    || (row.entryId ?? '').toLowerCase().includes(needle))
+  return [bundle.name, bundleTitleOf(bundle, resolveText), bundleDescriptionOf(bundle, resolveText)]
+    .some(value => value.toLowerCase().includes(needle))
 }
 
 /**
@@ -106,21 +96,6 @@ export function bundleToggleReasonOf(t: Translate, bundle: PluginBundleView): st
     return readOnlyReasonText(t, bundle.readOnlyReason)
   if (bundle.official)
     return t('pluginOfficialManage')
-  return undefined
-}
-
-/**
- * 行级开关的禁用原因，保持 v1 行为：有 `patchId` 且非本插件即可点（官方包的行也给——粒度细、可逆）。
- *
- * 包被停用时它的行没有存活的 Loader 条目（没有 `entryId`），启停请求无从下手，只能先启用包。
- */
-function rowToggleReasonOf(t: Translate, row: PluginBundleRowView): string | undefined {
-  if (row.readOnlyReason !== undefined)
-    return readOnlyReasonText(t, row.readOnlyReason)
-  if (row.entryId === undefined)
-    return t('pluginRowNoEntry')
-  if (row.patchId === undefined)
-    return t('pluginReasonUnaddressable')
   return undefined
 }
 
@@ -155,60 +130,12 @@ function failureTextOf(t: Translate, cause: unknown): string {
 }
 
 /**
- * 单行渲染（展开后的 Loader 条目）。
+ * 一个 npm 包（bundle）的卡片：图标 + 标题 + 一句话简介 + 版本 + 状态 + 包级开关。
  *
- * 为什么导出：`renderToStaticMarkup` 不跑 `useEffect`，拿不到拉取结果，于是「不可启停的行是什么样」
- * 只能靠直接喂一行数据来覆盖（见 `plugins-tab.render.test.tsx`）。
+ * 为什么以包为单位而不展开内部模块（2.3.0 用户定稿）：本机 200 多条 Loader 条目绝大多数是
+ * DSH 自己的内部模块，铺开既看不出「装了什么」也没法批量管理；条目级的精细开关在官方「插件」页。
  */
-export function PluginRowItem({ t, row, busy, onToggle }: PluginRowItemProps): ReactElement {
-  const reason = rowToggleReasonOf(t, row)
-  const readOnly = reason !== undefined
-  return (
-    <li className="dshp-extension__plugin-row">
-      <div className="dshp-extension__plugin-row-main">
-        <strong className="dshp-extension__plugin-row-name" title={row.moduleName}>{shortModuleName(row.moduleName)}</strong>
-        <span className="dshp-extension__plugin-row-id" title={row.entryId ?? row.rowId}>{row.entryId ?? row.rowId}</span>
-      </div>
-      <div className="dshp-extension__plugin-row-tags">
-        <Tag tone={row.enabled ? 'neutral' : 'warning'}>{row.enabled ? t('pluginEnabled') : t('pluginDisabled')}</Tag>
-        {row.fiberPhase === 'active' && <Tag tone="info">{t('pluginPhaseActive')}</Tag>}
-        {row.fiberPhase === 'failed' && <Tag tone="danger">{t('pluginPhaseFailed')}</Tag>}
-        {row.fiberPhase !== null && row.fiberPhase !== 'active' && row.fiberPhase !== 'failed' && <Tag tone="neutral">{row.fiberPhase}</Tag>}
-      </div>
-      {/*
-        禁用态的 `<button>` 在 Chromium 里收不到鼠标事件、title 常不弹，所以原因同时挂在外层
-        那个不会禁用的 span 上（与 restart-control.tsx 同一个坑）。
-      */}
-      <span className="dshp-extension__tip" title={reason}>
-        <Switch
-          checked={row.enabled}
-          disabled={busy || readOnly}
-          label={t('toggle')}
-          title={reason}
-          onChange={() => onToggle(row)}
-        />
-      </span>
-    </li>
-  )
-}
-
-/**
- * 一个 npm 包（bundle）的卡片：图标 + 名称 + 一句话简介 + 状态 + 开关，可展开看它的 Loader 条目。
- *
- * 为什么以包为单位（v1 的教训）：v1 铺的是 Loader 条目，本机 227 条、绝大多数是 DSH 自己的内部模块，
- * 既看不出「装了什么」，也没法批量管理；官方页的卡片同样是包级的，而包级数据里本来就带
- * `meta.title/description/icon`（图标是 base64 data URL）。
- */
-export function PluginBundleCard({
-  t,
-  bundle,
-  resolveText,
-  busy,
-  expanded,
-  onToggleExpanded,
-  onToggleBundle,
-  onToggleRow,
-}: PluginBundleCardProps): ReactElement {
+export function PluginBundleCard({ t, bundle, resolveText, busy, onToggleBundle }: PluginBundleCardProps): ReactElement {
   const title = bundleTitleOf(bundle, resolveText)
   const description = bundleDescriptionOf(bundle, resolveText)
   const switchReason = bundleToggleReasonOf(t, bundle)
@@ -217,7 +144,6 @@ export function PluginBundleCard({
       className="dshp-extension__plugin-card"
       data-official={bundle.official ? 'true' : 'false'}
       data-enabled={bundle.enabled ? 'true' : 'false'}
-      data-expanded={expanded ? 'true' : 'false'}
     >
       <span className="dshp-extension__plugin-card-icon" aria-hidden="true">
         {bundle.icon !== undefined && bundle.icon !== ''
@@ -226,23 +152,8 @@ export function PluginBundleCard({
       </span>
       <div className="dshp-extension__plugin-card-main">
         <div className="dshp-extension__plugin-card-title-row">
-          {/* 展开入口放在标题上：整块标题可点，箭头只是视觉提示；全名（npm 包名）始终留在 title。 */}
-          <button
-            type="button"
-            className="dshp-extension__plugin-card-title"
-            title={bundle.name}
-            aria-expanded={expanded}
-            aria-label={`${t('pluginExpand')}: ${title}`}
-            onClick={onToggleExpanded}
-          >
-            <span className="dshp-extension__plugin-card-name">{title}</span>
-            <Icon
-              className="dshp-extension__plugin-card-chevron"
-              data-expanded={expanded ? 'true' : 'false'}
-              as={ChevronDown}
-              size={12}
-            />
-          </button>
+          {/* 全名（npm 包名）始终留在 title 上：标题是本地化文案，包名才是稳定标识。 */}
+          <span className="dshp-extension__plugin-card-name" title={bundle.name}>{title}</span>
           {bundle.version !== undefined && bundle.version !== '' && (
             <span className="dshp-extension__plugin-card-version">{bundle.version}</span>
           )}
@@ -255,16 +166,11 @@ export function PluginBundleCard({
           <Tag tone="outline">{bundle.official ? t('pluginsFilterOfficial') : t('pluginsFilterThirdParty')}</Tag>
           <span className="dshp-extension__plugin-card-pkg" title={bundle.name}>{bundle.name}</span>
         </div>
-        {expanded && (bundle.rows.length === 0
-          ? <p className="dshp-extension__empty">{t('pluginRowsEmpty')}</p>
-          : (
-              <ul className="dshp-extension__plugin-card-rows">
-                {bundle.rows.map(row => (
-                  <PluginRowItem key={row.rowId} t={t} row={row} busy={busy} onToggle={onToggleRow} />
-                ))}
-              </ul>
-            ))}
       </div>
+      {/*
+        禁用态的 `<button>` 在 Chromium 里收不到鼠标事件、title 常不弹，所以原因同时挂在外层
+        那个不会禁用的 span 上（与 restart-control.tsx 同一个坑）。
+      */}
       <span className="dshp-extension__tip" title={switchReason}>
         <Switch
           checked={bundle.enabled}
@@ -279,7 +185,7 @@ export function PluginBundleCard({
 }
 
 /**
- * 「插件」tab：以 **npm 包**为单位展示 + 包级/行级启停 + 市场入口。
+ * 「插件」tab：以 **npm 包**为单位展示 + 包级启停 + 市场入口。
  *
  * 为什么自己不嵌官方页：官方插件页只导出 `NS/PANEL_ID/apply/inject`，没有组件也没有 `render()`，
  * 嵌不进来（spike-client §1.2）。数据与启停都走宿主转发（`/api/plugins*`），市场只给一个
@@ -290,7 +196,6 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
   // 默认「第三方」：官方包会把这几个包淹掉，而用户要管的正是第三方那几个。
   const [filter, setFilter] = useState<PluginFilter>('third-party')
   const [query, setQuery] = useState('')
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   const [busy, setBusy] = useState(false)
   const [reload, setReload] = useState(0)
   const [banner, setBanner] = useState<{ kind: 'ok' | 'info' | 'error', text: string } | null>(null)
@@ -303,17 +208,13 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
       (body) => {
         if (!current)
           return
-        // 宿主半与客户端半可以各自升级：老宿主只回 `{ plugins }`，缺字段时按空清单处理，
-        // 而不是让整页在 `.filter` 上抛错。
-        setData({
-          bundles: Array.isArray(body.bundles) ? body.bundles : [],
-          plugins: Array.isArray(body.plugins) ? body.plugins : [],
-        })
+        // 宿主半与客户端半可以各自升级：缺字段时按空清单处理，而不是让整页在 `.filter` 上抛错。
+        setData({ bundles: Array.isArray(body.bundles) ? body.bundles : [] })
       },
       (error: unknown) => {
         if (!current)
           return
-        setData({ bundles: [], plugins: [] })
+        setData({ bundles: [] })
         // 503 是「这个部署没有插件管理服务」，不是网络故障：文案要能直接回答「为什么是空的」。
         const unavailable = error instanceof ApiError && error.code === 'plugin-manager-unavailable'
         setBanner({
@@ -328,20 +229,8 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
   }, [reload, t])
 
   const bundles = data?.bundles ?? []
-  const plugins = data?.plugins ?? []
   const needle = query.trim().toLowerCase()
   const visible = bundles.filter(bundle => bundleMatchesFilter(bundle, filter) && bundleMatchesQuery(bundle, needle, resolveText))
-
-  const toggleExpanded = (name: string): void => {
-    setExpanded((previous) => {
-      const next = new Set(previous)
-      if (next.has(name))
-        next.delete(name)
-      else
-        next.add(name)
-      return next
-    })
-  }
 
   /**
    * 一次变更之后共用的收尾：写 banner、必要时留撤销记录、重拉清单。
@@ -357,7 +246,7 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
   }
 
   const doToggleBundle = async (bundle: PluginBundleView): Promise<void> => {
-    const record: PluginUndoRecord = { kind: 'bundle', id: bundle.name, label: bundle.name, previousEnabled: bundle.enabled }
+    const record: PluginUndoRecord = { name: bundle.name, label: bundle.name, previousEnabled: bundle.enabled }
     setBusy(true)
     try {
       const body = await postPluginBundleToggle({ name: bundle.name, enabled: !bundle.enabled })
@@ -383,39 +272,6 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
     }
   }
 
-  const doToggleRow = async (row: PluginBundleRowView): Promise<void> => {
-    if (row.entryId === undefined)
-      return
-    const entryId = row.entryId
-    const record: PluginUndoRecord = {
-      kind: 'row',
-      id: entryId,
-      label: shortModuleName(row.moduleName),
-      previousEnabled: row.enabled,
-    }
-    setBusy(true)
-    try {
-      const body = await postPluginToggle({ entryId, enabled: !row.enabled })
-      if (!mounted.current)
-        return
-      settle(body, record)
-      setReload(value => value + 1)
-    }
-    catch (error) {
-      if (!mounted.current)
-        return
-      const blocked = error instanceof ApiError && error.code === 'self-management'
-      setBanner({ kind: 'error', text: failureTextOf(t, error) })
-      if (!blocked)
-        setUndo(record)
-      setReload(value => value + 1)
-    }
-    finally {
-      if (mounted.current)
-        setBusy(false)
-    }
-  }
-
   /** 撤销 = 用同一条记录反向调一次；失败时保留记录，用户还能重试。 */
   const doUndo = async (): Promise<void> => {
     const record = undo
@@ -423,9 +279,7 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
       return
     setBusy(true)
     try {
-      const body = record.kind === 'bundle'
-        ? await postPluginBundleToggle({ name: record.id, enabled: record.previousEnabled })
-        : await postPluginToggle({ entryId: record.id, enabled: record.previousEnabled })
+      const body = await postPluginBundleToggle({ name: record.name, enabled: record.previousEnabled })
       if (!mounted.current)
         return
       if (body.ok) {
@@ -464,7 +318,7 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
         <Button variant="ghost" size="sm" disabled={busy} onClick={() => setReload(value => value + 1)}>{t('refresh')}</Button>
         {openMarket !== undefined && <Button variant="primary" size="sm" title={t('pluginMarketHint')} onClick={openMarket}>{t('pluginMarket')}</Button>}
       </div>
-      {/* 这段说明是用户问题「为什么有两百多个插件」的答案：铺开的是包，不是 227 条 Loader 条目。 */}
+      {/* 这段说明回答的是「为什么只有这么几个插件」：一个包可能含多条内部模块，条目级开关在官方页。 */}
       <p className="dshp-extension__intro">{t('pluginsIntroV2')}</p>
 
       {banner !== null && (
@@ -493,7 +347,7 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
           onChange={(next) => setFilter(next as PluginFilter)}
         />
         {data !== null && (
-          <span className="dshp-extension__count">{t('pluginsCount', { bundles: bundles.length, plugins: plugins.length })}</span>
+          <span className="dshp-extension__count">{t('pluginsCount', { bundles: bundles.length })}</span>
         )}
         <span className="dshp-extension__spacer" />
         <Input
@@ -526,10 +380,7 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
               bundle={bundle}
               resolveText={resolveText}
               busy={busy}
-              expanded={expanded.has(bundle.name)}
-              onToggleExpanded={() => toggleExpanded(bundle.name)}
               onToggleBundle={target => void doToggleBundle(target)}
-              onToggleRow={row => void doToggleRow(row)}
             />
           ))}
         </ul>

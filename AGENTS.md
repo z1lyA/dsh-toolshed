@@ -43,7 +43,7 @@ pnpm install
 pnpm typecheck     # tsc --noEmit（上游代码宽松，故 strict: false）
 pnpm build         # node scripts/build.mjs
 pnpm test          # node scripts/run-tests.mjs（签绑定 + 挑非 hardened Node，见约束 3）
-node .test/host-smoke.mjs 21   # 不起 DSH：mock ctx 调 apply()，数 webServer.register 的行数（应为 21）
+node .test/host-smoke.mjs 20   # 不起 DSH：mock ctx 调 apply()，数 webServer.register 的行数（应为 20）
 ```
 
 > **typecheck 需要宿主提供的 `@deepseek-ai/*` 类型**（约束 4 让它们保持 external）。作者机器上这些类型来自
@@ -83,7 +83,7 @@ curl -s http://127.0.0.1:<port>/dsh-toolshed/api/skills
 ```
 
 host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.js`，用带 `webServer` / `skills` / `connection` / `logger` / `on`
-的 mock ctx 调 `apply(ctx, { profile: 'desktop' })`，应注册 **21** 条路由且不抛错（`.test/host-smoke.mjs` 就是它）。
+的 mock ctx 调 `apply(ctx, { profile: 'desktop' })`，应注册 **20** 条路由且不抛错（`.test/host-smoke.mjs` 就是它）。
 
 ## 约定
 
@@ -123,25 +123,33 @@ host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.
   命中不到就停在「已安装」——这是**兜底**，不是主路径（见 `register/extension-panel.utils.ts`）。
 - **插件启停走官方 `pluginManager` 服务**（`service/plugins.ts`），**绝不**自己写 `cordis.patch.yml`：
   官方那层已经做了「保注释 / 保 `!!js` customTags / 原子写 + `withFileLock`」三件事（AGENTS 约束 5 的完整实现），
-  而且 `setPluginEnabled` 失败**不抛异常**——回 `application: 'applied' | 'restart-required' | 'overridden' | 'failed'`，
+  而且启停失败**不抛异常**——回 `application: 'applied' | 'restart-required' | 'overridden' | 'failed'`，
   所以调用方必须判 `application`，只 `try/catch` 会把失败当成功。desktop profile 带 `hmr` 时 `applied` 是热生效、不重启。
   服务**不进 `apply.ts` 导出的 `inject`**：多一个名字会让缺该服务的组合（非 profile 启动 / 老 DSH）整块面板挂不上，
   一律惰性 `ctx.get('pluginManager')`，取不到就回 503 `plugin-manager-unavailable` 让页面降级。
-  「停用 dsh-toolshed 自己」在服务层**硬拒绝**（行级与包级都是 409 `self-management`）：官方保护集里没有本插件，
+  「停用 dsh-toolshed 自己」在服务层**硬拒绝**（409 `self-management`）：官方保护集里没有本插件，
   停掉面板当场消失、没有恢复入口。
-- **「插件」tab 以包（bundle）为单位，不是以 Loader 条目为单位**（2.2.0）：`listPlugins()` 列的条目在本机有 227 条
-  （`dsh-base` 一个包就 87 条、`dsh-web-app` 96 条），铺开没法用；官方页的卡片也是包级的。
-  所以 `GET /api/plugins` 返回 `{ bundles, plugins }`：`bundles` 是主视图（含 `official` / `meta.title` /
-  `meta.description` / `meta.icon`，图标是 base64 data URL，超过 64 KiB 丢弃），`plugins` 只用来计数与搜索。
-  包级启停走 `setBundleEnabled(name, enabled)`（写 `dsh.profile.bundles`），行级走 `setPluginEnabled(entryId, enabled)`。
+- **「插件」tab 只讲包（bundle），不讲 Loader 条目**（2.3.0 定稿）：`listPlugins()` 列的条目在本机有 227 条
+  （`dsh-base` 一个包就 87 条、`dsh-web-app` 96 条），那是实现细节、不是「我装了什么」；条目级的精细开关
+  留给官方「插件」页。所以 `GET /api/plugins` 只返回 `{ bundles }`，`PluginBundleView` **没有** `rows`，
+  也没有 `/api/plugins/toggle` 这条行级路由——**别再把条目加回来**，用户明确说过「不要展示 loader 条目」。
+  包级数据含 `official` / `meta.title` / `meta.description` / `meta.icon`（图标是 base64 data URL，
+  超过 64 KiB 丢弃）；启停走 `setBundleEnabled(name, enabled)`（写 `dsh.profile.bundles`）。
   `LocalizedText` **不**在宿主端解析语言，原样透传给客户端用 `ctx.locale.resolveText()` 解析（官方页同做法）。
-  `resolvePluginManager` 要求 `listPlugins` / `setPluginEnabled` / `listBundles` / `setBundleEnabled` 四个方法都在，
-  因此 2.2.0 需要 DSH **0.2.2+** 才有插件管理（更老的宿主整 tab 回 503，页面如实降级）。
-- **侧栏自带的「插件」「更多」两行是 DOM 兜底隐藏的**（`register/sidebar-tweaks.ts`），属**已知易碎**方案：
-  官方 `ctx.slots` 没有 `when/hidden`、不能反注册他人条目，pins 还把 `plugins` 写死常驻，只有 DOM 一条路。
-  定位只用语义锚点（`[data-slot="sidebar.panellist"]` 认 nav、运行时按槽条目 label 反查 `aria-label` 认「插件」行、
-  `aria-haspopup="menu"` 认「更多」），**不用**构建哈希类名（`wtg9ga_*`）、不用 nth-child、不写死中英文；
-  全程 fail-open（命中 0 个什么都不做，最坏结果是「藏不掉」），`dispose` 逐字恢复原 inline 值。
+  `resolvePluginManager` 要求 `listBundles` / `setBundleEnabled` 两个方法都在，
+  因此需要 DSH **0.2.2+** 才有插件管理（更老的宿主整 tab 回 503，页面如实降级）。
+- **侧栏自带的「插件」行是 DOM 兜底隐藏的，「更多」只在安全时才藏**（`register/sidebar-tweaks.ts`），
+  属**已知易碎**方案：官方 `ctx.slots` 没有 `when/hidden`、不能反注册他人条目，pins 还把 `plugins` 写死常驻，
+  只有 DOM 一条路。定位只用语义锚点（`[data-slot="sidebar.panellist"]` 认 nav、运行时按槽条目 label 反查
+  `aria-label` 认「插件」行、`aria-haspopup="menu"` 认「更多」），**不用**构建哈希类名（`wtg9ga_*`）、
+  不用 nth-child、不写死中英文；全程 fail-open（命中 0 个什么都不做，最坏结果是「藏不掉」），
+  `dispose` 逐字恢复原 inline 值。
+  **「更多」绝不能无条件藏**（2.3.0 修过一次真实事故）：官方 `SidebarRoot` 的行过滤是
+  `id === 'plugins' || !hasEntryActions || !unpinned.includes(id)`，被**取消固定**的入口只出现在「更多」菜单里，
+  也只能在那儿重新固定，而固定状态是**内存态**（只有刷新才回来）。藏掉「更多」= 把入口关在门后。
+  所以规则是「**渲染出来的行数 ≥ 已注册的 `main` 面板数**（= 一个都没被取消固定）才藏」，数不出来就不藏——
+  fail-open 的方向必须选「多一行 More」而不是「入口找不回来」。改这段之前先读 `panel-pins.ts` 与
+  `SidebarRoot.tsx` 的行过滤。
   官方改 `SidebarRoot` 结构（去掉 `aria-label` / 换掉 More 的交互 / 改 `data-slot` 锚点）就会静默失效——
   只对 0.2.x 成立，升级大版本要重验。
 - 会话管理的服务层（`service/archive.ts`、`session-paths.ts`、`session-attachments.ts`、`pending-deletions.ts`）

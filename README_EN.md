@@ -122,10 +122,11 @@ the **top-right corner of the tab row** holds refresh + restart:
 
 - **Skills** (grouped list, search, enable/disable, view/edit SKILL.md, create — opens a new conversation in the
   current workspace with `/skill-creator` prefilled — delete, open folder, refresh),
-- **Plugins** (**by package (npm bundle)**: icon + name + one-line description + version + state; `All / Third-party /
-  Official` filter (third-party by default), search (package name, title, description, inner module names),
-  **package-level and row-level enable/disable**, expand to see the Loader rows, and **undo of the last change** when a
-  toggle fails; the **Plugin market** button opens the official Plugins page straight on its **Discover** tab),
+- **Plugins** (**packages only (npm bundles)**: icon + name + one-line description + version + state; `All / Third-party /
+  Official` filter (third-party by default), search (package name, title, description), **package-level
+  enable/disable**, and **undo of the last change** when a toggle fails; the **Plugin market** button opens the official
+  Plugins page straight on its **Discover** tab. **No Loader entries** — fine-grained entry switches live on the
+  official Plugins page),
 - **Sessions** (archived sessions — each row shows the **session title + short id**, see below),
 - **MCP** (list, add/edit, enable/disable, connection check, copy, import scanning, JSON export/import; a write shows
   a "restart needed" banner),
@@ -144,27 +145,29 @@ the **top-right corner of the tab row** holds refresh + restart:
 
 The official `listPlugins()` lists **Loader entries**, not packages: DSH splits itself into a few hundred cordis plugin
 entries (227 on this machine — `dsh-base` alone declares 87 and `dsh-web-app` 96), while **you installed 6 packages**.
-So this tab is **package-oriented** (`listBundles()`); entries only appear when you expand a package. The header count
-reads "N packages · M entries" to make that explicit, and the filter defaults to **Third-party** (`official === false`).
+
+So this tab **only talks about packages** (`listBundles()`): one card per npm package, **no Loader entries**; the
+filter defaults to **Third-party** (`official === false`), so opening it shows just the few you installed.
+(Fine-grained entry switches — such as turning off one internal module — belong to the official Plugins page, which
+lists every row of a package.)
 
 - Package data comes from the official `pluginManager.listBundles()`: `official` (shipped by DSH or listed in the market
   catalog), `installed`, `enabled`, `version`, `availability`, plus the **localized display metadata**
   `meta.title` / `meta.description` / `meta.icon` (the icon is a base64 data URL shipped by the package; anything above
   64 KiB is not forwarded). Text is resolved in the runtime language (`ctx.locale.resolveText`) — this plugin never
   guesses a language.
-- **Package toggles** use `setBundleEnabled(name, enabled)` (writes the profile's `dsh.profile.bundles`);
-  **row toggles** use `setPluginEnabled(entryId, enabled)` (writes the profile's `cordis.patch.yml`). Both are applied
-  by the official service: comments and `!!js` expressions preserved, atomic write, file lock — this plugin never
-  writes YAML itself.
+- **Package toggles** use `setBundleEnabled(name, enabled)` (adds/removes that layer in the profile's
+  `dsh.profile.bundles`), applied by the official service: comments and `!!js` expressions preserved, atomic write,
+  file lock — this plugin never writes YAML itself.
 - The outcome is surfaced verbatim: `applied` (immediate on a profile with hmr) / `restart-required` /
   `overridden` (a higher-priority patch wins) / `failed` (with the official code and diagnostic).
   **A `failed` outcome still wrote the file**, so the page keeps an **undo the last change** action.
-- Items that cannot be toggled say why: `management-required` (plugin management itself needs it) or `unaddressable`
-  (this profile's patch cannot address the item uniquely) — the same wording as the official page.
+- Packages that cannot be toggled say why: `management-required` (plugin management itself needs it) or
+  `unaddressable` (this profile's patch cannot address the item uniquely) — the same wording as the official page.
   **Package-level switches are disabled for official packages** (uninstall/catalog duties belong to the official page);
-  their **rows** can still be toggled individually.
+  third-party packages are what this tab operates on.
 - **dsh-toolshed cannot be disabled from here**: it is not in the official protected set, and disabling it would make
-  the panel vanish with no way back, so the host refuses with 409 `self-management` (both row and package level).
+  the panel vanish with no way back, so the host refuses with 409 `self-management`.
 - Without a `pluginManager` service (no profile, or DSH < 0.2.2) the route answers 503 `plugin-manager-unavailable` and
   the page says so instead of pretending the list is empty.
 
@@ -175,12 +178,19 @@ last step is a DOM fallback: the `${tabsId}-<tabId>` id suffix or the tab label;
 on Installed). If neither entry point exists the button is not rendered.
 
 > **Known limitation (fragile)**: to funnel the entry points into this panel, `register/sidebar-tweaks.ts` hides the
-> sidebar's own **Plugins** and **More** rows. `ctx.slots` has no "hide / conditional registration" and cannot
-> unregister another plugin's entries, so this is a **DOM patch**: it only uses semantic anchors
-> (`data-slot="sidebar.panellist"`, an `aria-label` resolved from the slot entry's own label, `aria-haspopup="menu"`),
-> never hashed class names or nth-child, and it fails open. A structural change in the sidebar may simply make the
-> rows reappear (no error, and the Toolshed row is never affected). The patch targets the DSH 0.2.x structure and must
-> be re-verified on a major upgrade; to restore the stock sidebar, drop the `ctx.effect(sidebarTweaksFeature, …)` line
+> sidebar's own **Plugins** row (the official build hard-codes it as always present, so it never gets lost) and hides
+> **More** only when that is safe. `ctx.slots` has no "hide / conditional registration" and cannot unregister another
+> plugin's entries, so this is a **DOM patch**: it only uses semantic anchors (`data-slot="sidebar.panellist"`, an
+> `aria-label` resolved from the slot entry's own label, `aria-haspopup="menu"`), never hashed class names or
+> nth-child, and it fails open. A structural change in the sidebar may simply make the rows reappear (no error, and the
+> Toolshed row is never affected).
+>
+> **Why More must not be hidden unconditionally**: the sidebar renders "pinned plus the fixed Plugins row", and an entry
+> you **unpin** only exists inside the **More** menu — which is also the only place to pin it back — while the pin state
+> itself is **in memory** (a refresh restores it). Hiding More therefore locks entries behind a closed door. This plugin
+> hides More only when "rendered rows ≥ registered panels" (i.e. nothing is unpinned); the moment an entry disappears
+> from the list, More comes back as the way out. The patch targets the DSH 0.2.x structure and must be re-verified on a
+> major upgrade; to restore the stock sidebar, drop the `ctx.effect(sidebarTweaksFeature, …)` line
 > in `client/index.ts`.
 
 ### 🗂 Archived sessions

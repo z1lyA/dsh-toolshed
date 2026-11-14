@@ -52,6 +52,7 @@ const present = [
   [client, 'pluginsIntroV2'],
   [client, 'pluginOfficialManage'],
   [client, 'pluginShowAll'],
+  // 2.3.0：只讲包。包级启停是唯一写操作，条目级路由与文案必须彻底消失（见 absent）
   [client, '/plugins/bundle/toggle'],
   // 侧栏「插件」「更多」两行的 DOM 兜底：标记属性与语义锚点都必须在产物里
   [client, 'data-toolshed-hidden'],
@@ -59,7 +60,6 @@ const present = [
   [client, 'sidebar.panellist'],
   [host, '/dsh-toolshed/api/plugins/bundle/toggle'],
   [host, '/dsh-toolshed/api/plugins'],
-  [host, '/dsh-toolshed/api/plugins/toggle'],
   [host, 'plugin-manager-unavailable'],
 ]
 
@@ -71,6 +71,11 @@ const absent = [
   [client, 'MarketTab'],
   [client, 'serviceTab'],
   [client, 'dshmarket'],
+  // 2.3.0 起：插件页只讲包，Loader 条目（行级清单 + 行级启停）整体移除。
+  // 用户原话「不要展示 loader 条目」——这几条就是防回归的钉子。
+  [host, '/dsh-toolshed/api/plugins/toggle'],
+  [client, 'pluginRowNoEntry'],
+  [client, 'plugin-card-rows'],
 ]
 
 for (const [text, needle] of present) {

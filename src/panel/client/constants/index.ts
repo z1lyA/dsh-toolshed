@@ -18,14 +18,18 @@ export const EXTENSION_PANEL_EFFECT = `${PLUGIN_ID}: extension panel`
 export const SIDEBAR_TWEAKS_EFFECT = `${PLUGIN_ID}: sidebar tweaks`
 
 /**
- * 侧栏两行（官方「插件」/「更多」）的隐藏目标。
+ * 侧栏自带的「插件」行（以及有条件地「更多」）的隐藏目标。
  *
- * 为什么是这三个非公开 DOM 约定（spike-client §3.4）：`ctx.slots` 没有 when/hidden，也不能反注册
- * 他人的条目，pins 还把 `plugins` 写死常驻——只有 DOM 兜底一条路。定位一律用语义锚点：
+ * 为什么是这些非公开 DOM 约定（spike-client §3.4 + 0.2.2 的 `SidebarRoot`）：`ctx.slots` 没有 when/hidden，
+ * 也不能反注册他人的条目，pins 还把 `plugins` 写死常驻——只有 DOM 兜底一条路。定位一律用语义锚点：
  * `data-slot` 认 nav、`aria-label`（运行时按槽条目 label 反查，不写死中英文）、`aria-haspopup="menu"`
  * 认「更多」；构建哈希类名（`wtg9ga_*`）与 nth-child 一律不用，它们在升级后会静默错位。
+ *
+ * `SIDEBAR_MAIN_SLOT` 只用来数「侧栏本该有几行」：`main` 槽的条目就是侧栏行的来源，行数变少
+ * 说明有入口被取消固定，此时「更多」必须留着当回收口。
  */
 export const SIDEBAR_PANELLIST_SLOT = 'sidebar.panellist'
+export const SIDEBAR_MAIN_SLOT = 'main'
 export const SIDEBAR_PLUGINS_ENTRY_ID = 'plugins'
 export const SIDEBAR_PANELLIST_ANCHOR = `[data-slot="${SIDEBAR_PANELLIST_SLOT}"]`
 export const SIDEBAR_PANELLIST_NAV_SELECTOR = 'nav'
