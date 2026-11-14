@@ -193,9 +193,34 @@ function compareBundles(a: PluginBundleView, b: PluginBundleView): number {
 }
 
 /**
+ * 官方「插件」页**没有页面**的包（`@deepseek-ai/dsh-official-bundles` 的 `HIDDEN_BUNDLES` 镜像）。
+ *
+ * 为什么这里也要藏一遍：官方那层过滤在**页面侧**（`PluginManagerPage` 的 `listed` 计算），
+ * 服务端 `listBundles()` 给的是全量。名单里是**别的 profile 模板用的基础组合**
+ * （`dsh-base` / `dsh-web-app` / `dsh-headless` / `dsh-sdk-app` / `dsh-sdk-minimal` / `dsh-acp-app`）
+ * 加上持久终端与 worktree 工具——它们在官方页里连卡片都没有，在本页出现只会让人以为
+ * 「我装了两个 SDK 插件 / 我装了 base」，还会让人去停 `dsh-base` 这种一停就起不来的东西。
+ *
+ * 官方包一律 external（AGENTS 约束 4），import 不到那个常量，只能镜像这份名单。
+ * 代价写在这里：官方**新增**一个会让我们多显示一项（可接受）；官方**改名**会让旧名字重新冒出来
+ * ——「我们的列表里有官方页没有的包」时，先来这里对一遍。
+ */
+const NO_PAGE_BUNDLES = new Set([
+  '@deepseek-ai/dsh-base',
+  '@deepseek-ai/dsh-web-app',
+  '@deepseek-ai/dsh-headless',
+  '@deepseek-ai/dsh-sdk-app',
+  '@deepseek-ai/dsh-acp-app',
+  '@deepseek-ai/dsh-sdk-minimal',
+  '@deepseek-ai/dsh-experimental-terminal-bundle',
+  '@deepseek-ai/dsh-experimental-tool-worktree',
+])
+
+/**
  * 页面主视图：一次 `listBundles()` 投影 + 排序。
  *
  * 排序放宿主：客户端只做筛选与渲染，两处都排会漂移。
+ * 过滤也放宿主：README 描述的可见集就是「官方页能看到的那些包」，客户端再筛会两处口径不一。
  */
 export async function listPluginBundles(manager: PluginManagerService): Promise<PluginBundleView[]> {
   const raw = await manager.listBundles()
@@ -203,7 +228,7 @@ export async function listPluginBundles(manager: PluginManagerService): Promise<
   if (Array.isArray(raw)) {
     for (const item of raw) {
       const view = projectBundle(item)
-      if (view !== undefined)
+      if (view !== undefined && !NO_PAGE_BUNDLES.has(view.name))
         bundles.push(view)
     }
   }

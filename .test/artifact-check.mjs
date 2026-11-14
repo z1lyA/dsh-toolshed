@@ -54,6 +54,9 @@ const present = [
   [client, 'pluginShowAll'],
   // 2.3.0：只讲包。包级启停是唯一写操作，条目级路由与文案必须彻底消失（见 absent）
   [client, '/plugins/bundle/toggle'],
+  // 2.4.0：会话页按工作区分组（组默认折叠），以及插件页不再列出「官方页没有页面的包」
+  [client, 'archiveGroupUnassigned'],
+  [client, 'archiveGroupSelectAll'],
   // 侧栏「插件」「更多」两行的 DOM 兜底：标记属性与语义锚点都必须在产物里
   [client, 'data-toolshed-hidden'],
   [client, 'aria-haspopup'],

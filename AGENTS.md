@@ -138,6 +138,12 @@ host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.
   `LocalizedText` **不**在宿主端解析语言，原样透传给客户端用 `ctx.locale.resolveText()` 解析（官方页同做法）。
   `resolvePluginManager` 要求 `listBundles` / `setBundleEnabled` 两个方法都在，
   因此需要 DSH **0.2.2+** 才有插件管理（更老的宿主整 tab 回 503，页面如实降级）。
+  **可见集要和官方页对齐**：官方那层过滤在页面侧（`PluginManagerPage` 的 `listed` + `dsh-official-bundles` 的
+  `HIDDEN_BUNDLES`），服务端 `listBundles()` 给的是全量，所以宿主另有一份镜像名单 `NO_PAGE_BUNDLES`
+  （`dsh-base` / `dsh-web-app` / `dsh-headless` / `dsh-sdk-app` / `dsh-acp-app` / `dsh-sdk-minimal` /
+  持久终端 / worktree 工具）——它们在官方页里连卡片都没有，其中 `dsh-base` 一停就起不来。
+  官方**新增**一个会让我们多显示一项（可接受），官方**改名**会让旧名字冒出来；「我们的列表里有官方页没有的包」
+  时先来这里对一遍。
 - **侧栏自带的「插件」行是 DOM 兜底隐藏的，「更多」只在安全时才藏**（`register/sidebar-tweaks.ts`），
   属**已知易碎**方案：官方 `ctx.slots` 没有 `when/hidden`、不能反注册他人条目，pins 还把 `plugins` 写死常驻，
   只有 DOM 一条路。定位只用语义锚点（`[data-slot="sidebar.panellist"]` 认 nav、运行时按槽条目 label 反查

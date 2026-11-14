@@ -157,6 +157,26 @@ describe('listPluginBundles（官方包 → 线协议包）', () => {
 
     expect(await listPluginBundles(manager)).toEqual([])
   })
+
+  it('官方页没有页面的包不出现在列表里（基础组合 / 持久终端 / worktree）', async () => {
+    const { manager } = fakeManager([
+      // 别的 profile 模板用的基础组合：用户会以为「我装了两个 SDK 插件」
+      { ...TOOLSHED_BUNDLE, name: '@deepseek-ai/dsh-sdk-minimal', official: true },
+      { ...TOOLSHED_BUNDLE, name: '@deepseek-ai/dsh-sdk-app', official: true },
+      // 一停就起不来的那层
+      { ...TOOLSHED_BUNDLE, name: '@deepseek-ai/dsh-base', official: true, enabled: true },
+      { ...TOOLSHED_BUNDLE, name: '@deepseek-ai/dsh-web-app', official: true, enabled: true },
+      // 持久终端与 worktree 工具在官方页里也没有开关
+      { ...TOOLSHED_BUNDLE, name: '@deepseek-ai/dsh-experimental-terminal-bundle', official: true },
+      { ...TOOLSHED_BUNDLE, name: '@deepseek-ai/dsh-experimental-tool-worktree', official: true },
+      // 真正有页面的可选包必须留下
+      { ...TOOLSHED_BUNDLE, name: '@deepseek-ai/dsh-experimental-auto-review', official: true },
+      TOOLSHED_BUNDLE,
+    ])
+
+    expect((await listPluginBundles(manager)).map(bundle => bundle.name))
+      .toEqual(['dsh-toolshed', '@deepseek-ai/dsh-experimental-auto-review'])
+  })
 })
 
 describe('toggleBundle：application 原样透出，只判 ok', () => {

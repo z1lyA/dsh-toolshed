@@ -279,6 +279,54 @@ export default b('extension', [
     lineHeight: '18px',
     color: secondary,
   }),
+  // 「会话」页的主层级是工作区：组头一行（折叠箭头 + 工作区名 + 该组统计 + 组内全选），会话行收在组里。
+  // 新增的这些条目只属于会话页，别和别的页共用。
+  e('archive-groups', {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    margin: '0',
+    padding: '0',
+    listStyle: 'none',
+  }),
+  e('archive-group', {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    minWidth: '0',
+  }),
+  // 组头复用 list-head 的横向布局；这里只是「折叠开关 + 标题」的外框，按钮样式仍由原语给。
+  e('archive-group-toggle', {
+    display: 'inline-flex',
+    alignItems: 'center',
+    minWidth: '0',
+    maxWidth: '100%',
+  }),
+  e('archive-group-title', {
+    minWidth: '0',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    fontSize: '13px',
+    lineHeight: '20px',
+    fontWeight: '600',
+    color: primary,
+  }),
+  // 折叠态复用同一个 ChevronDown 转 90°：bridge 只导出少数几个图标，不为一个箭头再加导出。
+  e('archive-chevron', {
+    flex: 'none',
+    marginRight: '6px',
+    transform: 'rotate(0deg)',
+    transition: 'transform .12s ease',
+  }),
+  c('.dshp-extension__archive-group-toggle[data-open="false"] .dshp-extension__archive-chevron', { transform: 'rotate(-90deg)' }),
+  // 组内缩进 + 左侧细线：一眼看出这些会话属于上面那个工作区。
+  e('archive-group-rows', {
+    paddingLeft: '14px',
+    marginLeft: '9px',
+    borderLeft: `1px solid ${border}`,
+  }),
+  e('archive-tristate', { display: 'inline-flex', alignItems: 'center' }),
   e('blockers', {
     margin: '0',
     paddingLeft: '18px',

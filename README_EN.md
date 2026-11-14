@@ -127,7 +127,10 @@ the **top-right corner of the tab row** holds refresh + restart:
   enable/disable**, and **undo of the last change** when a toggle fails; the **Plugin market** button opens the official
   Plugins page straight on its **Discover** tab. **No Loader entries** — fine-grained entry switches live on the
   official Plugins page),
-- **Sessions** (archived sessions — each row shows the **session title + short id**, see below),
+- **Sessions** (archived sessions **grouped by workspace** — groups collapsed by default, click a workspace to see its
+  sessions; sessions without a workspace fall into a trailing "No workspace" group; each group header carries the name,
+  session count, disk usage and pending count. **Select-all spans every group including collapsed ones**, and each group
+  has its own select-all / indeterminate state. Each row still shows the **session title + short id**, see below),
 - **MCP** (list, add/edit, enable/disable, connection check, copy, import scanning, JSON export/import; a write shows
   a "restart needed" banner),
 - **restart control (top-right)**: refresh (re-check whether a restart is possible) + restart service.
@@ -170,6 +173,12 @@ lists every row of a package.)
   the panel vanish with no way back, so the host refuses with 409 `self-management`.
 - Without a `pluginManager` service (no profile, or DSH < 0.2.2) the route answers 503 `plugin-manager-unavailable` and
   the page says so instead of pretending the list is empty.
+- **The visible set matches the official Plugins page**: the official page hides the bundles that have no page of
+  their own — the base compositions of other profile templates (`dsh-base`, `dsh-web-app`, `dsh-headless`, `dsh-sdk-app`,
+  `dsh-sdk-minimal`, `dsh-acp-app`), the persistent terminal bundle and the worktree tool. This page hides them too
+  (so you will not see `dsh-sdk-app` / `dsh-sdk-minimal`: they are not prerequisites, they are the base bundles of the
+  `sdk` / `sdk-minimal` profile templates — and `dsh-base` cannot be switched off at all). The list mirrors the official
+  `HIDDEN_BUNDLES`; when the two disagree, the official page wins.
 
 The **Plugin market** button does **not** reimplement the market: it opens the official Plugins page via
 `pluginNavigation.openList()`, falling back to `ctx.layout.selectPanel('plugins')`, and then **clicks that page's
@@ -194,6 +203,13 @@ on Installed). If neither entry point exists the button is not rendered.
 > in `client/index.ts`.
 
 ### 🗂 Archived sessions
+
+The list is **grouped by workspace first**: one header row per workspace (name + session count + that group's disk usage
++ pending count); click it to reveal that workspace's sessions. Sessions without workspace information go to a
+"No workspace" group pinned at the bottom. **Selection is independent of collapsing**: the top-right select-all covers
+every workspace, each group also has its own select-all (with its own indeterminate state), and the header shows
+selected/total. Groups are ordered by workspace name (a fixed `zh-Hans-CN` collation, so the same list does not reorder
+between machines); **rows inside a group keep the Host's order**.
 
 DSH can archive and unarchive but has **no delete API**. This tab adds it, with explicit rules:
 

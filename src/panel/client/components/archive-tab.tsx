@@ -1,10 +1,11 @@
-import type { ReactElement } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import type { ArchivePlanResponse, ArchiveRemoveResponse, ArchivedSessionView } from '../apis/index.type'
 import type { ArchiveFailureLine, ArchiveTabProps } from './archive-tab.types'
-import { Button, Checkbox, Icon, Modal, StateDot, Tag, Tray } from 'dsh-tauri-ui/client'
-import { useEffect, useMemo, useState } from 'react'
+import { Button, Checkbox, ChevronDown, Icon, Modal, StateDot, Tag, Tray } from 'dsh-tauri-ui/client'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { deleteArchived, getArchived, postArchivePendingCancel, postArchivePlan, postArchiveUnarchive } from '../apis'
 import { useTimers } from '../hooks/use-timers'
+import { groupSessionsByWorkspace, selectionState } from './archive-tab.utils'
 
 /** 体积的可读化（B/KB/MB/GB/TB；0–1 位小数，与宿主的 fileSizeText 语义一致但不受其精度约束）。 */
 function formatBytes(bytes: number): string {
@@ -23,9 +24,40 @@ function shortId(id: string): string {
 }
 
 /**
+ * 三态勾选框。
+ *
+ * `Checkbox` 是官方原语，只有 `checked`，没有 `indeterminate`；而「半选」是这一页的硬需求
+ * （全局全选跨折叠组，组内全选要如实反映组的状态）。这里不重画勾选框——样式、焦点环、禁用态
+ * 都得跟原语一致——只在挂载/更新后把原生 input 的 `indeterminate` 打上去。
+ * SSR 下 effect 不跑：静态标记与普通 Checkbox 完全一样，不会多出任何 DOM。
+ */
+function TriStateCheckbox({ checked, indeterminate, disabled, title, ariaLabel, label, onChange }: {
+  checked: boolean
+  indeterminate: boolean
+  disabled: boolean
+  title: string
+  ariaLabel?: string
+  label?: ReactNode
+  onChange: (next: boolean) => void
+}): ReactElement {
+  const holder = useRef<HTMLSpanElement | null>(null)
+  useEffect(() => {
+    const input = holder.current?.querySelector('input')
+    if (input !== null && input !== undefined)
+      input.indeterminate = indeterminate
+  }, [indeterminate, checked])
+  return (
+    <span className="dshp-extension__archive-tristate" ref={holder}>
+      <Checkbox checked={checked} disabled={disabled} title={title} aria-label={ariaLabel} onChange={onChange}>{label}</Checkbox>
+    </span>
+  )
+}
+
+/**
  * 「已归档」tab：DSH 没有删除会话的接口，这里补上，并把边界条件显式化。
  *
  * 关键交互规则（与宿主服务一一对应）：
+ *  - 列表主层级是**工作区**：一行一个工作区、默认折叠，点开才看到该工作区的会话再逐条勾选；
  *  - 只有归档会话能被选中；取消归档会同时撤掉它的「待删除」意图；
  *  - 删除先走 dry-run 计划（`/archive/plan`），弹窗里分「立即删 / 排队 / 拒绝」三类；
  *  - live 会话不会被强删，只登记为「待删除」，下次启动 DSH 时执行；
@@ -42,6 +74,12 @@ export function ArchiveTab({ t }: ArchiveTabProps): ReactElement {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [cleanupAttachments, setCleanupAttachments] = useState(true)
   const [acknowledged, setAcknowledged] = useState(false)
+  /**
+   * 展开的工作区分组。默认空集合 = 全部折叠（用户要的是「先看工作区，点开才看会话」），
+   * 且只作页面本地状态：键是工作区 id，所以刷新、删除后同一工作区仍然保持展开；
+   * 不持久化——折叠与否是「这一眼想看什么」，不是需要记住的偏好。
+   */
+  const [openGroups, setOpenGroups] = useState<ReadonlySet<string>>(() => new Set())
   const { mounted } = useTimers()
 
   useEffect(() => {
@@ -72,29 +110,89 @@ export function ArchiveTab({ t }: ArchiveTabProps): ReactElement {
   /** 选中集合按「当前仍存在的行」收敛：刷新后消失的行不该继续占着选择。 */
   const selectable = useMemo(() => (rows ?? []).map(row => row.id), [rows])
   const selectedIds = useMemo(() => selectable.filter(id => selected.has(id)), [selectable, selected])
-  const allSelected = selectable.length > 0 && selectedIds.length === selectable.length
+  // 全局全选跨全部工作区（含折叠组里的会话）：数据源是整张 list，与展开状态无关。
+  const allSelection = useMemo(() => selectionState(selectable, selected), [selectable, selected])
   const pendingSelected = useMemo(
     () => (rows ?? []).filter(row => selected.has(row.id) && row.pending !== undefined).map(row => row.id),
     [rows, selected],
   )
+  const groups = useMemo(() => groupSessionsByWorkspace(rows ?? []), [rows])
 
-  const toggleOne = (id: string, next: boolean): void => {
+  const toggleIds = (ids: readonly string[], next: boolean): void => {
     setSelected((previous) => {
       const draft = new Set(previous)
-      if (next)
-        draft.add(id)
-      else
-        draft.delete(id)
+      for (const id of ids) {
+        if (next)
+          draft.add(id)
+        else
+          draft.delete(id)
+      }
       return draft
     })
   }
 
   const toggleAll = (next: boolean): void => {
-    setSelected(next ? new Set(selectable) : new Set())
+    toggleIds(selectable, next)
+  }
+
+  const toggleOpen = (key: string): void => {
+    setOpenGroups((previous) => {
+      const draft = new Set(previous)
+      if (draft.has(key))
+        draft.delete(key)
+      else
+        draft.add(key)
+      return draft
+    })
   }
 
   const totalBytes = (rows ?? []).reduce((sum, row) => sum + row.totalBytes, 0)
   const pendingCount = (rows ?? []).filter(row => row.pending !== undefined).length
+
+  /** 会话行。分组只改层级，行内信息（占用/文件数/子代理数/待删除与失败标记）逐条照旧。 */
+  const renderRow = (row: ArchivedSessionView): ReactElement => (
+    <li className="dshp-extension__session" key={row.id}>
+      <Checkbox
+        checked={selected.has(row.id)}
+        disabled={busy}
+        aria-label={row.title ?? shortId(row.id)}
+        onChange={next => toggleIds([row.id], next)}
+      />
+      <div className="dshp-extension__session-body">
+        <div className="dshp-extension__session-title-row">
+          <strong className="dshp-extension__session-name" title={row.title ?? row.id}>
+            {row.title ?? shortId(row.id)}
+          </strong>
+          {row.live && <Tag tone="warning">{t('archiveLive')}</Tag>}
+          {row.pending !== undefined && <Tag tone="info">{t('archivePending')}</Tag>}
+          {row.pending?.lastError != null && <Tag tone="danger">{t('archivePendingFailed')}</Tag>}
+          {row.duplicate && <Tag tone="danger">{t('archiveDuplicate')}</Tag>}
+          {!row.hasLog && <Tag tone="neutral">{t('archiveNoLog')}</Tag>}
+        </div>
+        <div className="dshp-extension__session-meta">
+          {/* 有名字时 id 退到第二行做区分（同名会话不少见），没有名字时它就是标题 */}
+          {row.title !== undefined && <span className="dshp-extension__session-id" title={row.id}>{shortId(row.id)}</span>}
+          {/* 工作区名只在组头上出现一次：组内每行再写一遍是纯噪声 */}
+          <span>{formatBytes(row.totalBytes)}</span>
+          <span>
+            {row.logFiles}
+            {' '}
+            {t('archiveFiles')}
+          </span>
+          {row.descendants.length > 0 && (
+            <span>
+              {t('archiveDescendants')}
+              {' '}
+              {row.descendants.length}
+            </span>
+          )}
+        </div>
+      </div>
+      <Button variant="ghost" size="sm" disabled={busy} onClick={() => toggleIds([row.id], !selected.has(row.id))}>
+        {selected.has(row.id) ? t('archiveDeselect') : t('archiveSelect')}
+      </Button>
+    </li>
+  )
 
   const fail = (error: unknown): void => {
     if (!mounted.current)
@@ -233,11 +331,16 @@ export function ArchiveTab({ t }: ArchiveTabProps): ReactElement {
       )}
 
       <div className="dshp-extension__list-head">
-        <Checkbox checked={allSelected} disabled={busy || selectable.length === 0} onChange={next => toggleAll(next)}>
-          {t('archiveSelectAll')}
-        </Checkbox>
+        <TriStateCheckbox
+          checked={allSelection.checked}
+          indeterminate={allSelection.indeterminate}
+          disabled={busy || selectable.length === 0}
+          title={t('archiveSelectAll')}
+          label={t('archiveSelectAll')}
+          onChange={next => toggleAll(next)}
+        />
         <span className="dshp-extension__count">
-          {selectedIds.length}
+          {allSelection.count}
           /
           {selectable.length}
         </span>
@@ -257,50 +360,48 @@ export function ArchiveTab({ t }: ArchiveTabProps): ReactElement {
       {rows === null && <p className="dshp-extension__empty">{t('loading')}</p>}
       {rows !== null && rows.length === 0 && <p className="dshp-extension__empty">{t('archiveEmpty')}</p>}
       {rows !== null && rows.length > 0 && (
-        <ul className="dshp-extension__sessions">
-          {rows.map(row => (
-            <li className="dshp-extension__session" key={row.id}>
-              <Checkbox
-                checked={selected.has(row.id)}
-                disabled={busy}
-                aria-label={row.title ?? shortId(row.id)}
-                onChange={next => toggleOne(row.id, next)}
-              />
-              <div className="dshp-extension__session-body">
-                <div className="dshp-extension__session-title-row">
-                  <strong className="dshp-extension__session-name" title={row.title ?? row.id}>
-                    {row.title ?? shortId(row.id)}
-                  </strong>
-                  {row.live && <Tag tone="warning">{t('archiveLive')}</Tag>}
-                  {row.pending !== undefined && <Tag tone="info">{t('archivePending')}</Tag>}
-                  {row.pending?.lastError != null && <Tag tone="danger">{t('archivePendingFailed')}</Tag>}
-                  {row.duplicate && <Tag tone="danger">{t('archiveDuplicate')}</Tag>}
-                  {!row.hasLog && <Tag tone="neutral">{t('archiveNoLog')}</Tag>}
-                </div>
-                <div className="dshp-extension__session-meta">
-                  {/* 有名字时 id 退到第二行做区分（同名会话不少见），没有名字时它就是标题 */}
-                  {row.title !== undefined && <span className="dshp-extension__session-id" title={row.id}>{shortId(row.id)}</span>}
-                  {row.workspaceTitle !== undefined && <span>{row.workspaceTitle}</span>}
-                  <span>{formatBytes(row.totalBytes)}</span>
-                  <span>
-                    {row.logFiles}
-                    {' '}
-                    {t('archiveFiles')}
+        <ul className="dshp-extension__archive-groups">
+          {groups.map((group) => {
+            const state = selectionState(group.rows.map(row => row.id), selected)
+            const open = openGroups.has(group.key)
+            const name = group.title ?? t('archiveGroupUnassigned')
+            return (
+              <li className="dshp-extension__archive-group" key={group.key}>
+                <div className="dshp-extension__list-head">
+                  {/* 折叠态挂在自家 span 上（data-open），不赌原语是否把 data-* 透传到 DOM */}
+                  <span className="dshp-extension__archive-group-toggle" data-open={open ? 'true' : 'false'}>
+                    <Button variant="ghost" size="sm" aria-expanded={open} title={name} onClick={() => toggleOpen(group.key)}>
+                      <Icon as={ChevronDown} size={14} className="dshp-extension__archive-chevron" />
+                      <span className="dshp-extension__archive-group-title">{name}</span>
+                    </Button>
                   </span>
-                  {row.descendants.length > 0 && (
-                    <span>
-                      {t('archiveDescendants')}
-                      {' '}
-                      {row.descendants.length}
-                    </span>
-                  )}
+                  <span className="dshp-extension__count">
+                    {/* 有勾选时给出「已选/总数」，否则只报组内会话数：折叠状态下也能看出这组选中了什么 */}
+                    {state.count > 0 ? `${state.count}/${group.rows.length}` : group.rows.length}
+                    {' '}
+                    {t('archiveGroupSessions')}
+                  </span>
+                  <span className="dshp-extension__count">{formatBytes(group.totalBytes)}</span>
+                  {group.pendingCount > 0 && <Tag tone="info">{`${t('archivePending')} ${group.pendingCount}`}</Tag>}
+                  <span className="dshp-extension__spacer" />
+                  {/* 组内全选：只动这一组的 id，不再碰别的组；半选口径与全局全选共用 selectionState */}
+                  <TriStateCheckbox
+                    checked={state.checked}
+                    indeterminate={state.indeterminate}
+                    disabled={busy}
+                    title={t('archiveGroupSelectAll')}
+                    ariaLabel={t('archiveGroupSelectAll')}
+                    onChange={next => toggleIds(group.rows.map(row => row.id), next)}
+                  />
                 </div>
-              </div>
-              <Button variant="ghost" size="sm" disabled={busy} onClick={() => toggleOne(row.id, !selected.has(row.id))}>
-                {selected.has(row.id) ? t('archiveDeselect') : t('archiveSelect')}
-              </Button>
-            </li>
-          ))}
+                {open && (
+                  <ul className="dshp-extension__sessions dshp-extension__archive-group-rows">
+                    {group.rows.map(row => renderRow(row))}
+                  </ul>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
 
