@@ -104,7 +104,7 @@ host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.
   所以它是第三个 esbuild 入口，host 侧按固定文件名定位）。
 - `package.json` 的 `dsh.client.inject` 必须列出用到的官方客户端模块（layout / primitives / renderer / locale）。
 - **面板有四个 tab**（`client/components/extension-panel.tsx` 的 `rows`）：技能 / **插件** / 会话（会话 = 已归档会话管理）/
-  MCP。标签页那一行的**最右侧**是重启控件（`restart-control.tsx`：刷新 + 重启服务）。
+  MCP。标签页那一行的**最右侧**是重启控件（`restart-control.tsx`：只有「重启服务」一个动作）。
   新 tab 一律**追加在末尾**：`rows[0]` 就是首屏默认页，插到前面会改掉所有人的默认页。
   **唯一的例外是 2.2.0 的显式排序**（技能 / 插件 / 会话 / MCP）：那是用户点名要的顺序，不是「顺手调整」；
   再动顺序之前先确认这是不是又一个用户要求，别把默认页（`rows[0]` = 技能）一起挪了。
@@ -112,7 +112,9 @@ host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.
   （2.6.0 去掉安全闸后：有会话在跑 / 排队输入 / 后台 job **不再拦**，只作为 `blockers` 如实提示）。
   禁用原因用一句话写在 `title` 上（悬停即见）；`title` 也要挂在外层那个**不会禁用**的
   `span.dshp-extension__tip` 上——Chromium 里禁用态 button 收不到鼠标事件、title 常不弹。
-  刷新按钮重新拉 `GET /api/host/restart`。别再单开「服务」页，也别往别的页面塞第二个重启按钮。
+  刷新改成了**点「重启服务」时现读一次** `GET /api/host/restart`（2.6.1 删掉了独立的刷新按钮——
+  安全闸没了之后它只影响提示文案的新鲜度）；读失败时**保留上一次结果**，别让一次网络抖动把按钮变灰。
+  别再单开「服务」页，也别往别的页面塞第二个重启按钮。
   **别再把「活跃工作」接回成闸**：用户明确要求「我点重启就是真想重启」（2.6.0 之前的 409 `restart-blocked`
   已删除，`RestartStatusResponse` 也没有 `canRestart` 了）。`isDesktopHost` 那条判据**要留**——
   CLI / Web 形态下杀了自己没人重拉。

@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react'
 import type { RestartBlockerView, RestartStatusResponse } from '../apis/index.type'
 import type { RestartControlProps } from './restart-control.types'
-import { ArrowRotateRight, Button, Icon, IconButton, Modal } from 'dsh-tauri-ui/client'
+import { Button, Modal } from 'dsh-tauri-ui/client'
 import { useEffect, useState } from 'react'
 import { ApiError, getRestartStatus } from '../apis'
 import { SERVICE_RESTART_INITIAL_DELAY_MS, SERVICE_RESTART_POLL_INTERVAL_MS, SERVICE_RESTART_TIMEOUT_MS } from '../constants'
@@ -9,16 +9,16 @@ import { useTimers } from '../hooks/use-timers'
 import { restartHost } from '../service/restart'
 
 /**
- * 标签页行最右侧的重启控件（刷新 + 重启服务）。
+ * 标签页行最右侧的重启控件。
  *
  * 为什么不再单开一个「服务」tab：重启是宿主级、低频的动作，占一整页太重。
- * 这里只保留两个按钮：
- *   - 刷新：重新拉 `GET /api/host/restart`，重新判断现在能不能重启；
- *   - 重启服务：**只有「不是桌面进程 / 正在重启」才禁用**（2.6.0 起不再因为「有会话在跑」而拦），
- *     `title` 直接说明原因，鼠标悬停即可看到，不需要用户先点开再看错误。
  *
- * 点击重启仍走一次确认弹窗：它会中断正在跑的回合，误触的代价太大；有活跃工作时弹窗会**列出**
- * 它们（运行中的会话 / 排队输入 / 后台任务各几个），但**不拦**——点确认就执行。
+ * 2.6.1 起**没有刷新按钮了**：安全闸已经不存在（2.6.0），活跃工作清单只用来措辞，
+ * 「点了刷新才知道现在能不能点」这件事没有意义了。改成**点「重启服务」时现读一次**
+ * `GET /api/host/restart`——确认弹窗打开时看到的就是当下的实情。
+ *
+ * 按钮只在「不是桌面进程 / 正在重启」时禁用；点击走一次确认弹窗（它会中断正在跑的回合，
+ * 误触代价太大），弹窗里有活跃工作时会**列出**它们（运行中的会话 / 排队输入 / 后台任务各几个），但不拦。
  */
 export function RestartControl({ t }: RestartControlProps): ReactElement {
   const [status, setStatus] = useState<RestartStatusResponse | null>(null)
@@ -34,22 +34,22 @@ export function RestartControl({ t }: RestartControlProps): ReactElement {
     return kind === 'queued' ? t('serviceBlockerQueued') : t('serviceBlockerJob')
   }
 
+  /**
+   * 读一次宿主状态（挂载时 + 点开确认弹窗时 + 重启失败后）。
+   *
+   * 读失败**保留上一次的结果**：状态只是提示文案与「是不是桌面进程」的来源，
+   * 一次网络抖动不该把按钮变灰、让用户以为自己不能重启。
+   */
   const load = (): void => {
-    setBusy(true)
     void getRestartStatus().then(
       (body) => {
         if (mounted.current)
           setStatus(body)
       },
-      (cause: unknown) => {
-        if (mounted.current)
-          setStatus(null) // 读不到状态就当作「不可重启」，按钮保持禁用而不是放行
-        void cause
+      () => {
+        /* 保留上次结果 */
       },
-    ).finally(() => {
-      if (mounted.current)
-        setBusy(false)
-    })
+    )
   }
 
   useEffect(() => {
@@ -135,14 +135,6 @@ export function RestartControl({ t }: RestartControlProps): ReactElement {
 
   return (
     <span className="dshp-extension__head-actions">
-      <IconButton
-        variant="toolbar"
-        icon={<Icon as={ArrowRotateRight} />}
-        aria-label={t('refresh')}
-        title={t('refresh')}
-        disabled={busy || restarting}
-        onClick={load}
-      />
       {/*
         禁用态的 <button> 在 Chromium 里收不到鼠标事件，title 也常常不弹。
         title 同时挂在不会禁用的外层 span 上，保证「为什么不能重启」悬停一定能看到。
@@ -154,7 +146,12 @@ export function RestartControl({ t }: RestartControlProps): ReactElement {
           disabled={disabled}
           title={hint}
           aria-label={t('restartNow')}
-          onClick={() => setConfirm(true)}
+          onClick={() => {
+            // 打开确认弹窗前现读一次：弹窗里的「会中断什么」必须是当下的实情，
+            // 这也是 2.6.1 删掉独立刷新按钮后它唯一的刷新时机。
+            load()
+            setConfirm(true)
+          }}
         >
           {restarting ? t('restarting') : t('restartNow')}
         </Button>

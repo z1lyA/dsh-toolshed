@@ -133,9 +133,9 @@ the **top-right corner of the tab row** holds refresh + restart:
   has its own select-all / indeterminate state. Each row still shows the **session title + short id**, see below),
 - **MCP** (list, add/edit, enable/disable, connection check, copy, import scanning, JSON export/import; a write shows
   a "restart needed" banner),
-- **restart control (top-right)**: refresh (re-read the active-work report) + restart service. It is **not disabled by
-  running work** — only "not the desktop app" or "already restarting" disables it; the tooltip and the confirmation
-  dialog say what a restart will interrupt.
+- **restart control (top-right)**: a single **restart service**. It is **not disabled by running work** — only "not the
+  desktop app" or "already restarting" disables it; clicking it re-reads the active-work report, and the tooltip plus
+  the confirmation dialog say what a restart will interrupt.
 
 > Since 1.2.0 the **community market `dshmarket` is no longer embedded**. Since 2.1.0 the **Plugin market** button
 > opens the **official** Plugins page (`@deepseek-ai/dsh-plugin-market` / `dsh-client-ui-plugin-market` only register a
@@ -248,7 +248,9 @@ running turns, queued input and running/stopping jobs (archived sessions exempt)
 confirmation dialog can tell you **what a restart will interrupt** ("running session ×2, background job ×1"). Confirm
 and it runs: by the time you click, you have already decided nothing needs to keep running.
 
-The refresh button re-reads `GET /api/host/restart` to refresh that report. **Desktop only** (detected via
+Clicking **restart service** re-reads `GET /api/host/restart` first, so the confirmation dialog shows the state as of
+that click. (2.6.1 dropped the separate refresh button: with the safety gate gone it only refreshed a line of copy, so
+it had no reason to exist.) **Desktop only** (detected via
 `ELECTRON_RUN_AS_NODE=1` + an argv entry containing `dsh-desktop-host` + a real parent process); Web / CLI report it as
 unavailable — killing that process would leave nobody to relaunch it, so that one check stays.
 
