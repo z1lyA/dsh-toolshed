@@ -65,6 +65,9 @@ const present = [
   [host, '/dsh-toolshed/api/plugins/install'],
   // 2.6.0：重启去掉安全闸（活跃工作只提示、不拦）
   [client, 'restartWarnShort'],
+  // 2.6.2：技能来源按类别合并展示（两个用户目录 → 同类，不再出现两个同名标签）
+  [client, 'sourceProject'],
+  [client, 'sourceUser'],
   // 侧栏「插件」「更多」两行的 DOM 兜底：标记属性与语义锚点都必须在产物里
   [client, 'data-toolshed-hidden'],
   [client, 'aria-haspopup'],
@@ -87,6 +90,10 @@ const absent = [
   [host, '/dsh-toolshed/api/plugins/toggle'],
   [client, 'pluginRowNoEntry'],
   [client, 'plugin-card-rows'],
+  // 2.6.2：按 source 原值分组的四个文案键已并入「项目 / 用户」两类，防它们被加回来变成同名标签
+  [client, 'sourceUserDsh'],
+  [client, 'sourceUserAgents'],
+  [client, 'SOURCE_LOCALE_KEYS'],
 ]
 
 for (const [text, needle] of present) {

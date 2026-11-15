@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.6.2] — 2026-11-15
+
+### Fixed
+
+- **技能页出现两个同名的「用户」筛选标签**。DSH 的 `source` 有四个值——`user-dsh` / `user-agents` /
+  `project-dsh` / `project-agents`（分别对应 `~/.dsh/skills`、`~/.agents/skills` 与项目级同名目录），
+  而中文都译作「用户 / 项目」，按 `source` 原样渲染就出现了两个同名标签。
+  现在按**类别**（项目 / 用户 / 运行时 / 内置 / 自定义）合并展示与筛选：`SOURCE_FAMILIES` 把两个用户目录、
+  两个项目目录各并成一类，未知来源统一落到「自定义」。`SOURCE_LOCALE_KEYS` 与四个 `source*Dsh/Agents` 文案键一并删除，
+  换成 `sourceProject` / `sourceUser`；`sourceFamilyOf` / `sourceFamiliesOf` 抽成纯函数并补了单测。
+
 ## [2.6.1] — 2026-11-15
 
 ### Removed

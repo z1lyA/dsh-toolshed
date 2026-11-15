@@ -177,6 +177,11 @@ host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.
   `SidebarRoot.tsx` 的行过滤。
   官方改 `SidebarRoot` 结构（去掉 `aria-label` / 换掉 More 的交互 / 改 `data-slot` 锚点）就会静默失效——
   只对 0.2.x 成立，升级大版本要重验。
+- **技能来源按「类别」展示，不按宿主原值**（`client/components/skills-tab.utils.ts` 的 `SOURCE_FAMILIES`）：
+  DSH 的 `source` 有 `user-dsh` / `user-agents` / `project-dsh` / `project-agents` 四个值（`~/.dsh/skills` 与
+  `~/.agents/skills` 及项目级同名目录），中文译名都只有「用户 / 项目」——按原值渲染筛选项就会冒出两个同名标签
+  （2.6.2 修过一次）。统一合并成 项目 / 用户 / 运行时 / 内置 / 自定义 五类，认不出的来源归「自定义」，
+  不要把机器值透到界面上，也别再按 `source` 原值新增筛选项。
 - 会话管理的服务层（`service/archive.ts`、`session-paths.ts`、`session-attachments.ts`、`pending-deletions.ts`）
   是**纯 Node**、不依赖 DSH 服务（靠 `ctx.get` 取），因此可以脱离 DSH 直接单测；它们的线协议类型在
   `service/archive.types.ts`，由 `routes/index.types.ts` 再导出给客户端。队列与重启日志的目录**保持**

@@ -2,13 +2,13 @@ import type { ReactElement } from 'react'
 import type { SkillRowView } from '../types'
 import type { OpenTarget, SkillEditorState, SkillsTabProps } from './skills-tab.types'
 import { ArrowRotateRight, Button, Checkbox, GraduationCap, Icon, IconButton, Input, LogoGithub, Modal, Pill, SegmentedControl, StateDot, Switch, Tag } from 'dsh-tauri-ui/client'
-import { orderBy, uniq } from 'dsh-tauri/client'
+import { orderBy } from 'dsh-tauri/client'
 import { useEffect, useMemo, useState } from 'react'
 import { deleteSkill, getSkill, getSkills, postOpenDir, postRoots, postSkill, postSkillPolicy, postSkillsRefresh } from '../apis'
 import { MarkdownPreview } from '../components/markdown'
-import { IMPORT_REFRESH_DELAYS_MS, SKILL_REFRESH_INTERVAL_MS, SKILL_REFRESH_TIMEOUT_MS, SOURCE_LOCALE_KEYS } from '../constants'
+import { IMPORT_REFRESH_DELAYS_MS, SKILL_REFRESH_INTERVAL_MS, SKILL_REFRESH_TIMEOUT_MS } from '../constants'
 import { useTimers } from '../hooks/use-timers'
-import { normalizeRepository, policyTag } from './skills-tab.utils'
+import { normalizeRepository, policyTag, sourceFamiliesOf, sourceFamilyOf, SOURCE_FAMILY_LOCALE_KEYS } from './skills-tab.utils'
 
 export function SkillsTab({ t, createSkill }: SkillsTabProps): ReactElement {
   const [skills, setSkills] = useState<SkillRowView[] | null>(null)
@@ -179,8 +179,10 @@ export function SkillsTab({ t, createSkill }: SkillsTabProps): ReactElement {
   }
 
   const needle = query.trim().toLowerCase()
-  const filtered = useMemo(() => orderBy((skills ?? []).filter(skill => (sourceFilter === 'all' || skill.source === sourceFilter) && (needle === '' || skill.name.toLowerCase().includes(needle) || skill.description.toLowerCase().includes(needle))), [skill => skill.repository === undefined]), [needle, skills, sourceFilter])
-  const sources = skills === null ? [] : uniq(skills.map(skill => skill.source))
+  // 按**类别**筛/显示，不按宿主的原始 source：`user-dsh` 与 `user-agents` 都叫「用户」，
+  // 按 source 分会看到两个同名标签（见 skills-tab.utils 的 SOURCE_FAMILIES 注释）。
+  const filtered = useMemo(() => orderBy((skills ?? []).filter(skill => (sourceFilter === 'all' || sourceFamilyOf(skill.source) === sourceFilter) && (needle === '' || skill.name.toLowerCase().includes(needle) || skill.description.toLowerCase().includes(needle))), [skill => skill.repository === undefined]), [needle, skills, sourceFilter])
+  const sources = skills === null ? [] : sourceFamiliesOf(skills)
   const readOnly = editor?.mode === 'view'
 
   return (
@@ -224,7 +226,7 @@ export function SkillsTab({ t, createSkill }: SkillsTabProps): ReactElement {
         <Input className="dshp-extension__search" type="search" placeholder={t('searchSkills')} aria-label={t('searchSkills')} value={query} onChange={event => setQuery(event.target.value)} />
         <IconButton variant="toolbar" icon={<Icon as={ArrowRotateRight} />} aria-label={t('refresh')} title={t('refresh')} disabled={busy} onClick={() => void doRefresh()} />
       </div>
-      {sources.length > 1 && <div className="dshp-extension__chips" role="group" aria-label={t('source')}>{[{ id: 'all', label: t('filterAll') }, ...sources.map(source => ({ id: source, label: t(SOURCE_LOCALE_KEYS[source] ?? 'sourceCustom') }))].map(chip => <Pill key={chip.id} active={sourceFilter === chip.id} onClick={() => setSourceFilter(chip.id)}>{chip.label}</Pill>)}</div>}
+      {sources.length > 1 && <div className="dshp-extension__chips" role="group" aria-label={t('source')}>{[{ id: 'all', label: t('filterAll') }, ...sources.map(source => ({ id: source, label: t(SOURCE_FAMILY_LOCALE_KEYS[source] ?? 'sourceCustom') }))].map(chip => <Pill key={chip.id} active={sourceFilter === chip.id} onClick={() => setSourceFilter(chip.id)}>{chip.label}</Pill>)}</div>}
       {skills === null && <p className="dshp-extension__empty">{t('loading')}</p>}
       {skills !== null && filtered.length === 0 && <p className="dshp-extension__empty">{skills.length === 0 ? t('emptySkills') : t('noMatch')}</p>}
       {filtered.length > 0 && (
@@ -236,7 +238,7 @@ export function SkillsTab({ t, createSkill }: SkillsTabProps): ReactElement {
               <li className="dshp-extension__card" key={`${skill.source}/${skill.name}`}>
                 <div className="dshp-extension__card-top">
                   <strong className="dshp-extension__card-title" title={skill.name}>{skill.name}</strong>
-                  <Tag tone="info">{t(SOURCE_LOCALE_KEYS[skill.source] ?? 'sourceCustom')}</Tag>
+                  <Tag tone="info">{t(SOURCE_FAMILY_LOCALE_KEYS[sourceFamilyOf(skill.source)] ?? 'sourceCustom')}</Tag>
                   {tag.key && <Tag tone={tag.off ? 'warning' : 'neutral'}>{t(tag.key)}</Tag>}
                 </div>
                 <p className="dshp-extension__card-desc" title={skill.description}>{skill.description}</p>

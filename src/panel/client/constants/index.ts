@@ -1,4 +1,3 @@
-import type { LocaleKey } from '../locales/index.types'
 import { PLUGIN_ID } from '../../shared/constants'
 
 export { PLUGIN_ID } from '../../shared/constants'
@@ -64,13 +63,3 @@ export const SERVICE_RESTART_INITIAL_DELAY_MS = MCP_RESTART_INITIAL_DELAY_MS
 export const SERVICE_RESTART_POLL_INTERVAL_MS = MCP_RESTART_POLL_INTERVAL_MS
 export const SERVICE_RESTART_TIMEOUT_MS = MCP_RESTART_TIMEOUT_MS
 export const GITHUB_REPOSITORY_PATTERN = /^(?:https?:\/\/github\.com\/)?[\w.-]+\/[\w.-]+\/?$/i
-
-export const SOURCE_LOCALE_KEYS: Readonly<Record<string, LocaleKey>> = {
-  'project-dsh': 'sourceProjectDsh',
-  'project-agents': 'sourceProjectAgents',
-  'user-dsh': 'sourceUserDsh',
-  'user-agents': 'sourceUserAgents',
-  'runtime': 'sourceRuntime',
-  'bundled': 'sourceBundled',
-  'custom': 'sourceCustom',
-}

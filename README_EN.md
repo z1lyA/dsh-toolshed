@@ -120,7 +120,8 @@ Restart DSH once after a host-half update, then hard-refresh the browser.
 The sidebar shows **工具管理 / Toolshed** (Puzzle icon) with four tabs (order: Skills / Plugins / Sessions / MCP), and
 the **top-right corner of the tab row** holds refresh + restart:
 
-- **Skills** (grouped list, search, enable/disable, view/edit SKILL.md, create — opens a new conversation in the
+- **Skills** (list with a **source-category filter** — project / user / runtime / bundled — plus search, enable/disable,
+  view/edit SKILL.md, create — opens a new conversation in the
   current workspace with `/skill-creator` prefilled — delete, open folder, refresh),
 - **Plugins** (**packages only (npm bundles)**: icon + name + one-line description + version + state; `All / Third-party /
   Official` filter (third-party by default), search (package name, title, description), **package-level
