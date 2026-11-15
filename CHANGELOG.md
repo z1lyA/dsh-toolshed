@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.6.3] — 2026-11-15
+
+### Changed
+
+- **不再自动把 `~/.claude/skills` / `~/.codex/skills` 挂成技能根**（删掉 `agents.peek()`）。
+  这是 DSH 还不认识 `~/.agents/skills` 年代的兼容做法：DSH 0.2.2 起原生就扫 `~/.agents/skills`（`user-agents`），
+  而 Matt 那套技能安装器会用 junction 把 `.claude/skills/<name>` 指回 `.agents/skills/<name>`——
+  同一批真实目录被扫第二遍，且 DSH 去重时取 rank 最小（`project-dsh 100 < project-agents 200 < custom 300 <
+  user-dsh 400 < user-agents 500`），于是「自定义」那份赢走标签：界面上表现为一整组 Matt 技能包被标成
+  「自定义」，「用户」组只剩 `.agents` 独有的那些。
+  现在 `custom` 只包含**本插件自带的技能**（`find-skills` / `skill-creator`）与**你手动导入的仓库根**；
+  Claude / Codex 目录里的技能凡是在 `.agents/skills` 里也有的，都回到「用户」归类。
+  代价：只存在于 `~/.claude/skills`、而 `.agents/skills` 里没有的技能不再自动出现（本机没有这种情况）。
+
 ## [2.6.2] — 2026-11-15
 
 ### Fixed

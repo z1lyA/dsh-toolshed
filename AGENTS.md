@@ -182,6 +182,11 @@ host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.
   `~/.agents/skills` 及项目级同名目录），中文译名都只有「用户 / 项目」——按原值渲染筛选项就会冒出两个同名标签
   （2.6.2 修过一次）。统一合并成 项目 / 用户 / 运行时 / 内置 / 自定义 五类，认不出的来源归「自定义」，
   不要把机器值透到界面上，也别再按 `source` 原值新增筛选项。
+- **技能根只挂「我们自己的」**（`service/provider.ts`）：随包自带的 `skills/` + 用户手动导入的根。
+  **不要**再把 `~/.claude/skills` / `~/.codex/skills` 自动挂成 `customSkillDirs`（2.6.3 删除，`agents.peek()` 已不存在）：
+  DSH 0.2.2 起原生扫 `~/.agents/skills`，而 `.claude/skills/<name>` 通常是 junction 指回它，再挂一遍就是
+  同一批目录扫两次——DSH 按 rank 去重（`custom 300` < `user-agents 500`）会让 custom 那份**赢走标签**，
+  于是整组技能被标成「自定义」。`service/agents.ts` 现在只负责 MCP 配置的导入扫描。
 - 会话管理的服务层（`service/archive.ts`、`session-paths.ts`、`session-attachments.ts`、`pending-deletions.ts`）
   是**纯 Node**、不依赖 DSH 服务（靠 `ctx.get` 取），因此可以脱离 DSH 直接单测；它们的线协议类型在
   `service/archive.types.ts`，由 `routes/index.types.ts` 再导出给客户端。队列与重启日志的目录**保持**

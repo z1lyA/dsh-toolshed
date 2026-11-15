@@ -14,20 +14,19 @@ const GEMINI_MCP_FILE = '.gemini/settings.json'
 
 const CODEX_MCP_FILE = '.codex/config.toml'
 
-const AGENT_SKILL_DIRECTORIES = ['.claude/skills', '.codex/skills'] as const
-
+/**
+ * 其他 agent 的 MCP 配置（导入用）。
+ *
+ * 曾经还有一个 `peek()`：把 `~/.claude/skills` / `~/.codex/skills` 挂成技能根。2.6.3 删掉了——
+ * DSH 0.2.2 起原生扫 `~/.agents/skills`，而 `.claude/skills` 里通常是 junction 指回它，
+ * 再挂一遍会让同一批技能以 `custom` 的身份抢走标签（详见 `provider.ts` 的注释）。
+ */
 export const agents = defineService({
   resolve(home: string = homedir()): ImportedServer[] {
     return uniqBy(
       [...scanClaudeMcp(home), ...scanCodexMcp(home), ...scanCursorMcp(home), ...scanGeminiMcp(home)],
       server => `${server.agent}/${server.name}`,
     )
-  },
-
-  peek(home: string = homedir()): string[] {
-    return AGENT_SKILL_DIRECTORIES
-      .map(directory => join(home, directory))
-      .filter(path => existsSync(path))
   },
 })
 
