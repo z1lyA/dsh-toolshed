@@ -63,6 +63,8 @@ const present = [
   [client, '/plugins/install'],
   [host, '/dsh-toolshed/api/plugins/inspect'],
   [host, '/dsh-toolshed/api/plugins/install'],
+  // 2.6.0：重启去掉安全闸（活跃工作只提示、不拦）
+  [client, 'restartWarnShort'],
   // 侧栏「插件」「更多」两行的 DOM 兜底：标记属性与语义锚点都必须在产物里
   [client, 'data-toolshed-hidden'],
   [client, 'aria-haspopup'],

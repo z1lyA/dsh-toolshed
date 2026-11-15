@@ -18,7 +18,6 @@ function statusOf(code: string): number {
     case 'too-many':
     case 'body-too-large':
       return 413
-    case 'restart-blocked':
     case 'self-management':
       return 409
     case 'registry-unavailable':

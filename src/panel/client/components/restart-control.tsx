@@ -14,11 +14,11 @@ import { restartHost } from '../service/restart'
  * 为什么不再单开一个「服务」tab：重启是宿主级、低频的动作，占一整页太重。
  * 这里只保留两个按钮：
  *   - 刷新：重新拉 `GET /api/host/restart`，重新判断现在能不能重启；
- *   - 重启服务：**不可重启时禁用**，`title` 直接说明原因（有会话在跑 / 排队输入 / 后台任务 /
- *     不是桌面应用），鼠标悬停即可看到，不需要用户先点开再看错误。
+ *   - 重启服务：**只有「不是桌面进程 / 正在重启」才禁用**（2.6.0 起不再因为「有会话在跑」而拦），
+ *     `title` 直接说明原因，鼠标悬停即可看到，不需要用户先点开再看错误。
  *
- * 点击重启仍走一次确认弹窗：它会中断正在跑的回合，误触的代价太大。确认后才真正发起，
- * 并在宿主恢复后自动整页重载（重启必然切断这次请求）。
+ * 点击重启仍走一次确认弹窗：它会中断正在跑的回合，误触的代价太大；有活跃工作时弹窗会**列出**
+ * 它们（运行中的会话 / 排队输入 / 后台任务各几个），但**不拦**——点确认就执行。
  */
 export function RestartControl({ t }: RestartControlProps): ReactElement {
   const [status, setStatus] = useState<RestartStatusResponse | null>(null)
@@ -59,32 +59,34 @@ export function RestartControl({ t }: RestartControlProps): ReactElement {
   }, [])
 
   const available = status?.restartAvailable === true
-  const canRestart = status?.canRestart === true
   const blockers = status?.blockers ?? []
-  const disabled = busy || restarting || !available || !canRestart
+  // 2.6.0 起 `blockers` 不再是闸：只要宿主是桌面进程、且没在重启中，按钮就可点。
+  // 用户点重启之前已经自己确认过没有要继续的回合了，这里只负责在 tooltip 与确认弹窗里如实提示。
+  const disabled = busy || restarting || !available
 
-  /** 一句话概述原因（不列 id）：tooltip 只回答「为什么现在不能重启」。 */
-  const blockedSummary = (): string =>
-    `${t('restartBlocked')}: ${[...new Set(blockers.map(blocker => blocker.kind))].map(kindLabel).join(', ')}`
+  /** 按种类汇总活跃工作（「运行中的会话 ×2、后台任务 ×1」），用于 tooltip 与确认弹窗。 */
+  const activeWorkDetail = (): string => {
+    const counts = new Map<RestartBlockerView['kind'], number>()
+    for (const blocker of blockers)
+      counts.set(blocker.kind, (counts.get(blocker.kind) ?? 0) + 1)
+    return [...counts.entries()].map(([kind, count]) => `${kindLabel(kind)} ×${count}`).join('、')
+  }
 
   const hint = status === null
     ? t('loading')
     : !available
         ? t('serviceOnlyDesktop')
-        : canRestart ? t('serviceReady') : blockedSummary()
+        : blockers.length === 0 ? t('serviceReady') : t('restartWarnShort')
 
   /**
    * 失败原因要能直接指导下一步，而不是甩一句原始英文错误。
    *
-   * - `restart-blocked`：用同一句话概述"被哪些工作挡住"（与按钮的 tooltip 一致）；
    * - `restart-unavailable`：宿主明确拒绝（不在桌面应用 / 助手文件缺失 / 路径含 `%`），
    *   消息本身就是可执行的说明，前面加一句"无法重启"；
    * - 其它：保留 `code`/状态码，方便贴到 issue 里定位。
    */
   const failureText = (cause: unknown): string => {
     if (cause instanceof ApiError) {
-      if (cause.code === 'restart-blocked')
-        return blockedSummary() || t('restartBlocked')
       if (cause.code === 'restart-unavailable')
         return `${t('restartBlocked')}: ${cause.message}`
       const code = cause.code ?? `HTTP ${cause.status}`
@@ -171,6 +173,7 @@ export function RestartControl({ t }: RestartControlProps): ReactElement {
         )}
       >
         <p>{t('restartConfirmBody')}</p>
+        {blockers.length > 0 && <p className="dshp-extension__form-error">{t('restartWarnActive')}{activeWorkDetail()}</p>}
         {error !== null && <p className="dshp-extension__form-error">{error}</p>}
       </Modal>
     </span>

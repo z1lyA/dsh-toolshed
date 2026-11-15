@@ -38,15 +38,6 @@ export class RestartUnavailableError extends ArchiveRequestError {
   }
 }
 
-/** 安全闸发现了会被重启打断的工作。 */
-export class RestartBlockedError extends ArchiveRequestError {
-  constructor(blockers: RestartBlockerView[]) {
-    super('restart-blocked', 'active workspace sessions would be interrupted')
-    this.name = 'RestartBlockedError'
-    this.blockers = blockers
-  }
-}
-
 /**
  * 桌面宿主脚本在 argv 里的形状：`...\dsh-desktop-host\lib\index.js`（路径段，不是任意子串）。
  *
@@ -74,11 +65,14 @@ export function isDesktopHost(
 }
 
 /**
- * 检查工作区里仍在进行的工作。
+ * 汇报工作区里仍在进行的工作。
+ *
+ * **这些不再拦截重启**（2.6.0 起）：它们只是「点了重启会发生什么」的实情，页面拿去做措辞。
+ * 早先这里是安全闸（有交叉就 409 拒绝），但用户的实际体验是「绝大多数时候都点不动」——
+ * 他点重启之前已经自己确认过没有要继续的东西了。
  *
  * 已归档会话刻意豁免：它们可能还挂着空闲 live Agent，但那不是「工作区里正在跑的对话」。
- * 运行中的回合、排队中的 inbox、running/stopping 的后台 job 才会拦住重启——与 DSH 自己的
- * 更新/退出准入（`hasDesktopActiveTasks`）对齐。
+ * 运行中的回合、排队中的 inbox、running/stopping 的后台 job 都会列出来。
  */
 export function inspectActiveWork(ctx: HostServiceHub, runtime: RestartRuntime = {}): RestartStatusResponse {
   const get = (name: string): any => {
@@ -146,7 +140,6 @@ export function inspectActiveWork(ctx: HostServiceHub, runtime: RestartRuntime =
   }
   const available = isDesktopHost(runtime.argv, runtime.env, runtime.ppid)
   return {
-    canRestart: blockers.length === 0,
     restartAvailable: available,
     blockers,
     ...(available ? {} : { reason: 'not-desktop-host' }),
@@ -179,12 +172,15 @@ export function createRestartAdmin(ctx: HostServiceHub, config: SessionRootsConf
     const inspection = inspectActiveWork(ctx)
     if (!inspection.restartAvailable)
       throw new RestartUnavailableError('restart is only available in the DSH Desktop application')
-    if (!inspection.canRestart)
-      throw new RestartBlockedError(inspection.blockers)
+    // 这里**不再**因为「有活跃工作」而拒绝（2.6.0，用户要求）：`blockers` 只用于在确认弹窗里如实提示，
+    // 点确认就执行。用户自己承担「重启会中断正在跑的回合」这件事——他点之前已经确认过了。
     if (!existsSync(helperFile)) {
       // 缺助手文件就绝不会把应用杀掉后起不来：宁可现在明确失败。
       throw new RestartUnavailableError(`restart helper is missing: ${helperFile}`)
     }
+    // ⚠ `executable` 必须在使用前声明：这是 `const`，在 TDZ 里被引用会抛 ReferenceError，
+    // 而 Windows 上这一行是必执行的——曾经的写法让「重启」在 win32 上直接 500（TS2448 早就报过）。
+    const executable = process.execPath
     // cmd.exe 的 `%VAR%` 展开不受双引号保护：路径里带 `%` 时助手会拿到被吃掉一段的路径，
     // 结果是「应用被杀掉、没人重拉」。这种情况宁可不重启。
     if (process.platform === 'win32' && [executable, helperFile, planFile].some(value => value.includes('%')))
@@ -192,7 +188,6 @@ export function createRestartAdmin(ctx: HostServiceHub, config: SessionRootsConf
     restarting = true
 
     const parentPid = process.ppid
-    const executable = process.execPath
     const plan = {
       parentPid,
       executable,

@@ -133,9 +133,9 @@ the **top-right corner of the tab row** holds refresh + restart:
   has its own select-all / indeterminate state. Each row still shows the **session title + short id**, see below),
 - **MCP** (list, add/edit, enable/disable, connection check, copy, import scanning, JSON export/import; a write shows
   a "restart needed" banner),
-- **restart control (top-right)**: refresh (re-check whether a restart is possible) + restart service.
-  When a restart is not possible the button is disabled and its tooltip lists the reason — running sessions, queued
-  input, background jobs, or "not the desktop app".
+- **restart control (top-right)**: refresh (re-read the active-work report) + restart service. It is **not disabled by
+  running work** — only "not the desktop app" or "already restarting" disables it; the tooltip and the confirmation
+  dialog say what a restart will interrupt.
 
 > Since 1.2.0 the **community market `dshmarket` is no longer embedded**. Since 2.1.0 the **Plugin market** button
 > opens the **official** Plugins page (`@deepseek-ai/dsh-plugin-market` / `dsh-client-ui-plugin-market` only register a
@@ -238,14 +238,19 @@ DSH can archive and unarchive but has **no delete API**. This tab adds it, with 
 
 ### 🔄 Restart control (top-right)
 
-A process-level restart (DSH exposes no restart API to plugins): the host inspects running turns, queued input and
-running/stopping jobs (archived sessions exempt); when there is active work the button is **disabled** and its
-tooltip lists the blockers. Otherwise one click + one confirmation writes a restart plan, spawns the detached helper
-`lib/restart-helper.js`, replies, then `taskkill /T`s the current Electron process tree; the helper waits for the old
-process to exit and relaunches the same executable as a GUI app, and the page reloads once the host is back.
-Log: `$DSH_HOME/session-admin/restart.log`. The refresh button re-reads `GET /api/host/restart`, so the control
-re-enables as soon as the blocking work is gone. **Desktop only** (detected via `ELECTRON_RUN_AS_NODE=1` + an argv
-entry containing `dsh-desktop-host` + a real parent process); Web / CLI report it as unavailable.
+A process-level restart (DSH exposes no restart API to plugins): one click + one confirmation writes a restart plan,
+spawns the detached helper `lib/restart-helper.js`, replies, then `taskkill /T`s the current Electron process tree; the
+helper waits for the old process to exit and relaunches the same executable as a GUI app, and the page reloads once the
+host is back. Log: `$DSH_HOME/session-admin/restart.log`.
+
+**There is no safety gate** (since 2.6.0): active work never disables or refuses a restart. It is still reported —
+running turns, queued input and running/stopping jobs (archived sessions exempt) — purely so the tooltip and the
+confirmation dialog can tell you **what a restart will interrupt** ("running session ×2, background job ×1"). Confirm
+and it runs: by the time you click, you have already decided nothing needs to keep running.
+
+The refresh button re-reads `GET /api/host/restart` to refresh that report. **Desktop only** (detected via
+`ELECTRON_RUN_AS_NODE=1` + an argv entry containing `dsh-desktop-host` + a real parent process); Web / CLI report it as
+unavailable — killing that process would leave nobody to relaunch it, so that one check stays.
 
 <p align="center">
   <img src="assets/screenshot-skills.png" alt="Extension panel · Skills" width="720" /><br/>

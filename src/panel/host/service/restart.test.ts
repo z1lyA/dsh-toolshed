@@ -91,16 +91,14 @@ describe('isDesktopHost', () => {
 })
 
 describe('inspectActiveWork', () => {
-  it('allows a restart with no live workspace work', () => {
+  it('reports no active work for a quiet workspace', () => {
     const result = inspectActiveWork(context(), desktopRuntime)
-    expect(result.canRestart).toBe(true)
     expect(result.restartAvailable).toBe(true)
     expect(result.blockers).toEqual([])
   })
 
-  it('blocks a running non-archived session', () => {
+  it('reports a running non-archived session', () => {
     const result = inspectActiveWork(context({ agents: [agent('session-a', 'running')] }), desktopRuntime)
-    expect(result.canRestart).toBe(false)
     expect(result.blockers).toEqual([{ id: 'session-a', kind: 'running' }])
   })
 
@@ -109,11 +107,10 @@ describe('inspectActiveWork', () => {
       archived: ['session-a'],
       agents: [agent('session-a', 'running'), agent('session-b', 'idle')],
     }), desktopRuntime)
-    expect(result.canRestart).toBe(true)
     expect(result.blockers).toEqual([])
   })
 
-  it('blocks queued inbox work and running jobs', () => {
+  it('reports queued inbox work and running jobs', () => {
     const result = inspectActiveWork(context({
       agents: [agent('session-a', 'idle', { nextTurn: [{}] }), agent('session-b', 'idle')],
       jobs: [
@@ -121,7 +118,6 @@ describe('inspectActiveWork', () => {
         { id: 'job-2', sessionId: 'session-c', status: 'finished' },
       ],
     }), desktopRuntime)
-    expect(result.canRestart).toBe(false)
     expect(result.blockers).toEqual([
       { id: 'session-a', kind: 'queued' },
       { id: 'session-b', kind: 'job' },
@@ -134,7 +130,7 @@ describe('inspectActiveWork', () => {
       agents: [agent('session-a', 'running')],
       jobs: [{ id: 'job-1', sessionId: 'session-a', status: 'running' }],
     }), desktopRuntime)
-    expect(result.canRestart).toBe(true)
+    expect(result.blockers).toEqual([])
   })
 
   it('reports restart as unavailable outside the Desktop Host', () => {
@@ -145,7 +141,12 @@ describe('inspectActiveWork', () => {
     })
     expect(result.restartAvailable).toBe(false)
     expect(result.reason).toBe('not-desktop-host')
-    expect(result.canRestart).toBe(true)
+  })
+
+  it('活跃工作只是信息，不再有「能不能重启」这个判据（2.6.0 去掉了安全闸）', () => {
+    const result = inspectActiveWork(context({ agents: [agent('session-a', 'running')] }), desktopRuntime)
+    expect(result).not.toHaveProperty('canRestart')
+    expect(result.restartAvailable).toBe(true)
   })
 })
 
@@ -160,12 +161,21 @@ describe('createRestartAdmin', () => {
     expect(status.logFile).toBe(logFile)
     expect(status.restartAvailable).toBe(false)
     expect(status.reason).toBe('not-desktop-host')
-    expect(status.canRestart).toBe(true)
 
     const failure = await admin.execute().catch(error => error)
     expect(failure).toBeInstanceOf(RestartUnavailableError)
     expect(failure.code).toBe('restart-unavailable')
     // 被拒绝的路径必须在写任何文件之前返回：连状态目录都不该出现。
     expect(await exists(path.join(home, 'session-admin'))).toBe(false)
+  })
+
+  it('有活跃工作时不再回 restart-blocked：拒绝理由只剩「不是桌面进程」', async () => {
+    const home = await workspace('dsa-restart-busy-')
+    const admin = createRestartAdmin(context({ agents: [agent('session-a', 'running')] }), { dshHome: home })
+
+    expect(admin.check().blockers).toEqual([{ id: 'session-a', kind: 'running' }])
+    const failure = await admin.execute().catch(error => error)
+    // 非桌面环境照样拒绝，但理由必须是 restart-unavailable——安全闸已经不存在了。
+    expect(failure.code).toBe('restart-unavailable')
   })
 })

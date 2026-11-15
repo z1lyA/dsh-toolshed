@@ -108,10 +108,17 @@ host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.
   新 tab 一律**追加在末尾**：`rows[0]` 就是首屏默认页，插到前面会改掉所有人的默认页。
   **唯一的例外是 2.2.0 的显式排序**（技能 / 插件 / 会话 / MCP）：那是用户点名要的顺序，不是「顺手调整」；
   再动顺序之前先确认这是不是又一个用户要求，别把默认页（`rows[0]` = 技能）一起挪了。
-- **重启入口只有一个**：`restart-control.tsx`（标签页行最右）。不可重启时按钮禁用，原因用一句话写在 `title` 上
-  （悬停即见）；`title` 也要挂在外层那个**不会禁用**的 `span.dshp-extension__tip` 上——Chromium 里禁用态 button
-  收不到鼠标事件、title 常不弹。刷新按钮重新拉 `GET /api/host/restart`。别再单开「服务」页，也别往别的页面
-  塞第二个重启按钮。
+- **重启入口只有一个**：`restart-control.tsx`（标签页行最右）。**只有「不是桌面进程」和「正在重启」才禁用按钮**
+  （2.6.0 去掉安全闸后：有会话在跑 / 排队输入 / 后台 job **不再拦**，只作为 `blockers` 如实提示）。
+  禁用原因用一句话写在 `title` 上（悬停即见）；`title` 也要挂在外层那个**不会禁用**的
+  `span.dshp-extension__tip` 上——Chromium 里禁用态 button 收不到鼠标事件、title 常不弹。
+  刷新按钮重新拉 `GET /api/host/restart`。别再单开「服务」页，也别往别的页面塞第二个重启按钮。
+  **别再把「活跃工作」接回成闸**：用户明确要求「我点重启就是真想重启」（2.6.0 之前的 409 `restart-blocked`
+  已删除，`RestartStatusResponse` 也没有 `canRestart` 了）。`isDesktopHost` 那条判据**要留**——
+  CLI / Web 形态下杀了自己没人重拉。
+- **`restart.ts` 的 `executable` 必须在使用前声明**（`const`，TDZ）：曾经写在 `%` 检查之后，
+  于是 Windows 上每次重启都在 `ReferenceError` 里 500（`tsc` 的 TS2448 早就报过，被当成噪声忽略了）。
+  动这个文件时先跑一次真机重启。
 - **插件市场收编已在 1.2.0 移除**（`service/market.ts`、`market-tab.tsx` 已删）：不要再把社区 `dshmarket`
   的面板嵌回来，也不要再动它的设置页入口——那是它自己的入口。
   2.1.0 的「插件市场」按钮走的是**官方** `@deepseek-ai/dsh-plugin-market`（它只往官方「插件」页注册一个

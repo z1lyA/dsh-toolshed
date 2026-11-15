@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.6.0] — 2026-11-15
+
+### Changed
+
+- **去掉重启的「安全闸」**。之前只要工作区里有运行中的回合、排队中的输入或 running/stopping 的后台任务，
+  重启按钮就**禁用**、`POST /api/host/restart` 回 409 `restart-blocked`。实际体验是「绝大多数时候都点不动」，
+  而用户点重启之前本来就已经确认过没有要继续的东西了。现在：
+  - 按钮只在**「不是桌面进程」**或**「正在重启」**时禁用；
+  - 活跃工作仍然读出来（已归档会话豁免），只用于**如实说明会中断什么**——`title` 与确认弹窗里列成
+    「运行中的会话 ×2、后台任务 ×1」；点确认就执行；
+  - `RestartStatusResponse` 去掉 `canRestart`，`RestartBlockedError` 与 `restart-blocked` 的 409 映射一并删除。
+
+### Fixed
+
+- **Windows 上重启其实一直是坏的**：`restart.ts` 在 `%` 路径检查里引用了尚在 TDZ 的 `const executable`
+  （声明在其后），win32 上必抛 `ReferenceError` → 500。`tsc` 的 TS2448 一直是红的，被当成既有噪声忽略了。
+  现在把 `executable` 提到使用之前。
+
 ## [2.5.0] — 2026-11-15
 
 ### Added

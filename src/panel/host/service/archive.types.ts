@@ -156,8 +156,14 @@ export interface RestartBlockerView {
 
 /** GET /api/host/restart */
 export interface RestartStatusResponse {
-  canRestart: boolean
+  /** 当前宿主是不是「拥有这个应用」的桌面进程；false 时按钮禁用（CLI / Web 杀了自己起不来）。 */
   restartAvailable: boolean
+  /**
+   * 工作区里还在跑的活（运行中的回合 / 排队输入 / 后台 job）。
+   *
+   * **不是闸**（2.6.0 起）：页面拿它来措辞（「重启会中断这些工作」），点确认就执行。
+   * 早先这里是 `canRestart`，有交叉就 409 拒绝重启，实际体验是绝大多数时候点不动。
+   */
   blockers: RestartBlockerView[]
   reason?: string
   logFile?: string
