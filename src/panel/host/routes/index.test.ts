@@ -53,6 +53,8 @@ const EXPECTED_ROUTES: ReadonlyArray<readonly [string, string]> = [
   ['POST', `${P}/host/restart`],
   ['GET', `${P}/plugins`],
   ['POST', `${P}/plugins/bundle/toggle`],
+  ['POST', `${P}/plugins/inspect`],
+  ['POST', `${P}/plugins/install`],
 ]
 
 /** 同一路径的多个方法由 defineRoutes 收敛为一行注册。 */
@@ -80,15 +82,24 @@ const SKILL = {
 
 /**
  * 假 pluginManager：字段形状照官方 `BundleInfo`（一个第三方包 + 一个官方包），
- * 并记下每次启停的入参，用来断言「409 拒绝时没有真的去写」。
+ * 并记下每次启停 / 安装的入参，用来断言「409 拒绝时没有真的去写」与「请求体原样透传」。
  *
- * 只实现 `listBundles` / `setBundleEnabled`：服务层鸭子类型只认这两个（老宿主的条目级方法不再需要）。
+ * 只实现服务层鸭子类型真正要求的方法：`listBundles` / `setBundleEnabled`（启停）与
+ * `inspect` / `installBundle`（安装）。两组能力分开判，缺哪组只影响用到它的路由。
+ *
+ * `installBundle` 的行为按 spec 分支：
+ *  - `needs-build` → 首次回 `application:'failed'` + `pendingBuilds`（这一轮什么都没装）；
+ *  - 带 `approvedBuilds` → 这一次装成功（模拟用户点了「允许并继续」）。
  */
 function pluginManagerStub(): {
   pluginManager: unknown
   bundleCalls: Array<{ name: string, enabled: boolean }>
+  inspected: string[]
+  installed: Array<{ spec: string, options?: { approvedBuilds?: string[], registry?: string } }>
 } {
   const bundleCalls: Array<{ name: string, enabled: boolean }> = []
+  const inspected: string[] = []
+  const installed: Array<{ spec: string, options?: { approvedBuilds?: string[], registry?: string } }> = []
   // 故意把官方包排在前面：排序在宿主做，响应里必须变成「第三方在前」。
   const bundles = [
     {
@@ -115,12 +126,44 @@ function pluginManagerStub(): {
   ]
   return {
     bundleCalls,
+    inspected,
+    installed,
     pluginManager: {
       listBundles: async () => bundles,
       setBundleEnabled: async (name: string, enabled: boolean) => {
         bundleCalls.push({ name, enabled })
         // 包级可能回「需重启」：200 透出 application 才让页面能如实提示。
         return { changed: true, application: 'restart-required', stage: 'enable', target: name, enabled }
+      },
+      inspect: async (spec: string) => {
+        inspected.push(spec)
+        // 两种真实答复各一条：能装的（带官方 registry 字段，宿主不该透出）与拒绝。
+        return spec === 'missing-pkg'
+          ? { status: 'refused', problem: 'not-found', reason: 'pnpm view answered no package', registries: ['https://registry.npmjs.org/'] }
+          : { status: 'accepted', kind: 'registry', name: 'dsh-demo', version: '1.2.3', description: 'demo bundle', bundle: true, registry: 'https://registry.npmjs.org/' }
+      },
+      installBundle: async (spec: string, options?: { approvedBuilds?: string[], registry?: string }) => {
+        installed.push({ spec, options })
+        if (spec === 'needs-build' && (options?.approvedBuilds ?? []).length === 0) {
+          return {
+            changed: false,
+            application: 'failed',
+            stage: 'install',
+            target: spec,
+            error: { code: 'operation-error', diagnostic: 'Ignored build scripts: esbuild' },
+            pendingBuilds: ['esbuild'],
+            packageResult: { exitCode: 1, output: 'Ignored build scripts: esbuild', truncated: false, logPath: '/tmp/install.log', kind: 'build-blocked' },
+          }
+        }
+        return {
+          changed: true,
+          application: 'applied',
+          stage: 'enable',
+          target: 'dsh-demo',
+          bundle: 'dsh-demo',
+          version: '1.2.3',
+          packageResult: { exitCode: 0, output: 'Progress: resolved 1', truncated: false, logPath: '/tmp/install.log' },
+        }
       },
     },
   }
@@ -342,6 +385,14 @@ describe('能力管理器路由声明', () => {
       ['POST', `${P}/roots`, { kind: 'zip' }, 'kind must be local or git'],
       ['POST', `${P}/open/dir`, {}, 'target is required'],
       ['POST', `${P}/plugins/bundle/toggle`, {}, 'name and enabled are required'],
+      ['POST', `${P}/plugins/inspect`, {}, 'spec is required'],
+      ['POST', `${P}/plugins/inspect`, { spec: '   ' }, 'spec is required'],
+      ['POST', `${P}/plugins/inspect`, { spec: 'x'.repeat(513) }, 'spec is required'],
+      ['POST', `${P}/plugins/install`, {}, 'spec is required'],
+      ['POST', `${P}/plugins/install`, { spec: 'dsh-demo', approvedBuilds: 'esbuild' }, 'approvedBuilds must be an array of non-empty strings'],
+      ['POST', `${P}/plugins/install`, { spec: 'dsh-demo', approvedBuilds: [''] }, 'approvedBuilds must be an array of non-empty strings'],
+      ['POST', `${P}/plugins/install`, { spec: 'dsh-demo', approvedBuilds: Array.from({ length: 65 }, () => 'x') }, 'approvedBuilds must be an array of non-empty strings'],
+      ['POST', `${P}/plugins/install`, { spec: 'dsh-demo', registry: '' }, 'registry must be a non-empty string'],
     ]
     for (const [method, path, body, error] of cases) {
       const response = await fetch(`${base}${path}`, {
@@ -470,6 +521,132 @@ describe('能力管理器路由声明', () => {
     expect(response.status).toBe(409)
     expect(await response.json()).toMatchObject({ code: 'self-management' })
     expect(bundleCalls).toEqual([])
+
+    dispose()
+  })
+
+  it('pOST /plugins/inspect 透出 accepted（官方 registry 字段不透出），spec 去空白后交给官方', async () => {
+    const { pluginManager, inspected } = pluginManagerStub()
+    const { base, dispose } = await start({ pluginManager })
+
+    const response = await fetch(`${base}${P}/plugins/inspect`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ spec: '  dsh-demo@1.2.3  ' }),
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      status: 'accepted',
+      kind: 'registry',
+      name: 'dsh-demo',
+      version: '1.2.3',
+      description: 'demo bundle',
+      bundle: true,
+    })
+    expect(inspected).toEqual(['dsh-demo@1.2.3'])
+
+    dispose()
+  })
+
+  it('pOST /plugins/inspect 的拒绝是 200（业务结论，页面要显示官方原话）', async () => {
+    const { pluginManager } = pluginManagerStub()
+    const { base, dispose } = await start({ pluginManager })
+
+    const response = await fetch(`${base}${P}/plugins/inspect`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ spec: 'missing-pkg' }),
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      status: 'refused',
+      problem: 'not-found',
+      reason: 'pnpm view answered no package',
+    })
+
+    dispose()
+  })
+
+  it('pOST /plugins/install 装成功：application / bundle / version / 输出尾部透出', async () => {
+    const { pluginManager, installed } = pluginManagerStub()
+    const { base, dispose } = await start({ pluginManager })
+
+    const response = await fetch(`${base}${P}/plugins/install`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ spec: ' dsh-demo ' }),
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      ok: true,
+      application: 'applied',
+      changed: true,
+      bundle: 'dsh-demo',
+      version: '1.2.3',
+      output: 'Progress: resolved 1',
+    })
+    // 没有 approvedBuilds / registry 时不给官方传 options（官方默认值才是权威）。
+    expect(installed).toEqual([{ spec: 'dsh-demo', options: undefined }])
+
+    dispose()
+  })
+
+  it('pOST /plugins/install 的 application:failed 也是 200，pendingBuilds 如实回给页面', async () => {
+    const { pluginManager } = pluginManagerStub()
+    const { base, dispose } = await start({ pluginManager })
+
+    const response = await fetch(`${base}${P}/plugins/install`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ spec: 'needs-build' }),
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      ok: false,
+      application: 'failed',
+      changed: false,
+      errorCode: 'operation-error',
+      diagnostic: 'Ignored build scripts: esbuild',
+      failureKind: 'build-blocked',
+      pendingBuilds: ['esbuild'],
+      output: 'Ignored build scripts: esbuild',
+    })
+
+    dispose()
+  })
+
+  it('pOST /plugins/install 第二轮带 approvedBuilds 继续，registry 原样透传', async () => {
+    const { pluginManager, installed } = pluginManagerStub()
+    const { base, dispose } = await start({ pluginManager })
+
+    const response = await fetch(`${base}${P}/plugins/install`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ spec: 'needs-build', approvedBuilds: ['esbuild'], registry: 'https://registry.npmmirror.com/' }),
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ ok: true, application: 'applied', bundle: 'dsh-demo' })
+    expect(installed).toEqual([{
+      spec: 'needs-build',
+      options: { approvedBuilds: ['esbuild'], registry: 'https://registry.npmmirror.com/' },
+    }])
+
+    dispose()
+  })
+
+  it('pOST /plugins/inspect 与 /plugins/install 在安装能力缺失时返回 503', async () => {
+    // 默认 harness 里没有 pluginManager：与老宿主一致（列表/启停那两条走的是另一份契约）。
+    const { base, dispose } = await start()
+
+    for (const path of [`${P}/plugins/inspect`, `${P}/plugins/install`]) {
+      const response = await fetch(`${base}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ spec: 'dsh-demo' }),
+      })
+      expect(response.status, path).toBe(503)
+      expect(await response.json(), path).toMatchObject({ code: 'plugin-manager-unavailable' })
+    }
 
     dispose()
   })

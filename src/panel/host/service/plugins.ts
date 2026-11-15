@@ -18,6 +18,11 @@ import type {
   LocalizedTextView,
   PluginBundleToggleBody,
   PluginBundleView,
+  PluginInspectAccepted,
+  PluginInspectBody,
+  PluginInspectResponse,
+  PluginInstallBody,
+  PluginInstallResponse,
   PluginsListResponse,
   PluginToggleResponse,
 } from './plugins.types'
@@ -55,6 +60,57 @@ export interface OfficialChangeResult {
 }
 
 /**
+ * 官方 `PackageResult` 里与「为什么失败」有关的字段。
+ *
+ * `kind` 是官方对最后一次 pnpm 运行的分类（`build-blocked` / `network` / `not-found` …），页面要靠它
+ * 决定是「让用户点允许构建」还是「提示换源」；`output` 是唯一能给出原话的线索。
+ */
+export interface OfficialInstallPackageResult {
+  kind?: string
+  output?: string
+  /** 官方已按自己的上限截过一遍；我们这里再截到 8 KiB（见 `INSTALL_OUTPUT_MAX_LENGTH`）。 */
+  truncated?: boolean
+  /** 兼容性 / `expected` 校验的拒绝原因（`unexpected-package` | `not-bundle`）。 */
+  unmet?: string
+  exitCode?: number
+  timedOut?: boolean
+  logPath?: string
+}
+
+/** 官方 `ChangeResult` 里安装专有、启停用不到的那几个字段。 */
+export interface OfficialInstallChangeResult extends OfficialChangeResult {
+  /** 装成功的包名与 manifest 版本：官方装完才报得出来（`inspect` 读到的是最新发布，可能不一样）。 */
+  bundle?: string
+  version?: string
+  /** 非空 = 有安装脚本等用户显式批准，**这一轮什么都没装**。 */
+  pendingBuilds?: string[]
+  packageResult?: OfficialInstallPackageResult
+}
+
+/**
+ * 官方 `PluginSpecInspection` 的最小镜像。
+ *
+ * 只列我们真正读的字段：`registry` / `host` / `registries` 是诊断用的，页面不显示，
+ * 声明过来只会多一份会漂移的形状。
+ */
+export interface OfficialSpecInspection {
+  status?: string
+  kind?: string
+  name?: string
+  version?: string
+  description?: string
+  bundle?: boolean | null
+  problem?: string
+  reason?: string
+}
+
+/** 官方 `InstallBundleOptions` 里我们透传的两项（其余由官方默认值决定）。 */
+export interface OfficialInstallBundleOptions {
+  approvedBuilds?: string[]
+  registry?: string | null
+}
+
+/**
  * 官方 `plugin-manager` 的公开契约在本地的最小镜像（官方包 external，不能 import 类型）。
  *
  * 只声明我们真正会调的两个方法：多写不用到的方法会随官方演进变脆，也会让老宿主被误判成不可用。
@@ -62,6 +118,20 @@ export interface OfficialChangeResult {
 export interface PluginManagerService {
   listBundles: () => Promise<OfficialBundleInfo[]>
   setBundleEnabled: (name: string, enabled: boolean) => Promise<OfficialChangeResult>
+}
+
+/**
+ * 安装能力（官方 `inspect()` / `installBundle()`）的最小契约。
+ *
+ * 为什么和 `PluginManagerService` 分开而不是加在一起：启停在 0.2.2 就有了，安装要更新的宿主；
+ * 合成一个接口会让老宿主连「启停」都判成不可用——那就把这个 tab 唯一能用的功能也一起拿掉了。
+ * 两个能力各自按需解析，缺哪个只影响用到它的那条路由。
+ *
+ * 返回值一律 `unknown`：官方包 external 拿不到类型，而投影层必须假定形状会漂移（逐字段校验）。
+ */
+export interface PluginInstallerService {
+  inspect: (spec: string) => Promise<unknown>
+  installBundle: (spec: string, options?: OfficialInstallBundleOptions) => Promise<unknown>
 }
 
 /** 服务层自己判定的拒绝；`code` 是稳定机器码，路由层据它映射 HTTP 状态。 */
@@ -85,6 +155,24 @@ const OK_APPLICATIONS = new Set(['applied', 'restart-required', 'overridden'])
  * base64 是纯 ASCII，字符数即字节数，所以直接比 `length`。
  */
 const ICON_MAX_LENGTH = 64 * 1024
+
+/**
+ * 安装输出只回**尾部** 8 KiB。
+ *
+ * pnpm 的原话在最后几十行（`ERR_PNPM_*` 与退出原因），而一次安装的输出可以是几百 KiB；
+ * 整段回传会把响应撑大，页面也只展示一个可滚动的详情框。
+ */
+const INSTALL_OUTPUT_MAX_LENGTH = 8 * 1024
+
+/** 截断说明放在输出**前面**：页面从上往下渲染，用户第一眼就该知道「这段不是完整的」。 */
+const INSTALL_OUTPUT_TRUNCATED = `[dsh-toolshed] pnpm output truncated: showing the last ${INSTALL_OUTPUT_MAX_LENGTH} characters`
+
+/**
+ * 官方答复的形状我们认不出来时的兜底说明。
+ *
+ * 宁可显示「检查不了」，也不要把读不懂的答复画成「可以装」——后者会把用户带进一次注定失败的安装。
+ */
+const UNRECOGNISED_RESULT = 'the pluginManager answered a result this panel does not recognise'
 
 /**
  * 按名字取服务：`ctx.get` 是 cordis 的正规入口，属性兜底只为 ctx 被换过形态的组合（照 restart.ts）。
@@ -122,6 +210,23 @@ export function resolvePluginManager(ctx: HostServiceHub): PluginManagerService 
   return typeof manager.listBundles === 'function'
     && typeof manager.setBundleEnabled === 'function'
     ? manager
+    : undefined
+}
+
+/**
+ * 惰性解析同一个 `pluginManager` 的**安装**能力。
+ *
+ * 与 `resolvePluginManager` 是两份独立的契约：老宿主可能只有启停没有安装，反过来也不成立，
+ * 所以各自只认自己用的两个方法。同样是请求期按名字取、不进 `inject`（理由见上一条）。
+ */
+export function resolvePluginInstaller(ctx: HostServiceHub): PluginInstallerService | undefined {
+  const candidate = readService(ctx, 'pluginManager')
+  if (candidate === null || typeof candidate !== 'object')
+    return undefined
+  const installer = candidate as PluginInstallerService
+  return typeof installer.inspect === 'function'
+    && typeof installer.installBundle === 'function'
+    ? installer
     : undefined
 }
 
@@ -283,10 +388,127 @@ export async function toggleBundle(
   return toToggleResponse(await manager.setBundleEnabled(name, enabled))
 }
 
+/** 只认真正的普通对象：数组 / null / 原始值在投影里一律当「形状不对」。 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+/**
+ * 官方 `inspect()` 的答复 → 线协议。
+ *
+ * 只搬页面真正要用的六个字段（`status/kind/name/version/description/bundle`）；
+ * `registry` / `host` / `registries` 是诊断用的，页面不显示，搬过去只会多一份会漂移的字段。
+ *
+ * 形状不对的单字段直接跳过，整体仍然返回：一次检查的答复坏掉不该让页面卡在「检查中」。
+ */
+export function toInspectResponse(raw: unknown): PluginInspectResponse {
+  const inspection = isRecord(raw) ? (raw as OfficialSpecInspection) : undefined
+  if (inspection?.status === 'accepted' && typeof inspection.kind === 'string' && inspection.kind !== '') {
+    const accepted: PluginInspectAccepted = {
+      status: 'accepted',
+      kind: inspection.kind,
+      // 官方语义：`null` = 这种 spec 形式判断不了有没有 bundle（git / tarball 要装完才知道）。
+      // 读不出布尔值时也用 `null`，不猜 true/false——猜错会让页面提前承诺「这是插件包」。
+      bundle: typeof inspection.bundle === 'boolean' ? inspection.bundle : null,
+    }
+    if (typeof inspection.name === 'string' && inspection.name !== '')
+      accepted.name = inspection.name
+    if (typeof inspection.version === 'string' && inspection.version !== '')
+      accepted.version = inspection.version
+    if (typeof inspection.description === 'string')
+      accepted.description = inspection.description
+    return accepted
+  }
+  // 走到这里要么是 refused，要么是认不出的形状（含非对象、少了 kind 的 accepted）：
+  // 一律按「拒绝」回，页面会如实显示原因，而不是把一个读不懂的答复画成「检查通过」。
+  const problem = typeof inspection?.problem === 'string' && inspection.problem !== ''
+    ? inspection.problem
+    : 'unknown'
+  const reason = typeof inspection?.reason === 'string' && inspection.reason !== ''
+    ? inspection.reason
+    : UNRECOGNISED_RESULT
+  return { status: 'refused', problem, reason }
+}
+
+/** 输出尾部 8 KiB；超了在前面加一行截断说明（页面从上往下渲染，先说清「这不是完整的」）。 */
+function outputTail(output: string): string {
+  if (output.length <= INSTALL_OUTPUT_MAX_LENGTH)
+    return output
+  return `${INSTALL_OUTPUT_TRUNCATED}\n${output.slice(-INSTALL_OUTPUT_MAX_LENGTH)}`
+}
+
+/**
+ * 官方 `installBundle()` 的 `ChangeResult` → 线协议。
+ *
+ * 与启停同一套 `application` 语义（官方也可能**不抛异常**把失败放进结果里），所以这里同样只判
+ * `application`。区别是安装失败需要更多线索：`failureKind` 用来分支（要不要请用户批准构建脚本），
+ * `output` 是用户唯一能看到的 pnpm 原话。
+ */
+export function toInstallResponse(raw: unknown): PluginInstallResponse {
+  // 走 `unknown` 中转才转得动：两者没有足够的重叠字段（官方形状只是镜像，不能当真）。
+  const result: OfficialInstallChangeResult | undefined = isRecord(raw)
+    ? (raw as unknown as OfficialInstallChangeResult)
+    : undefined
+  const application = typeof result?.application === 'string' ? result.application : 'failed'
+  const response: PluginInstallResponse = {
+    ok: OK_APPLICATIONS.has(application),
+    application,
+    changed: result?.changed === true,
+  }
+  const error = isRecord(result?.error) ? result.error : undefined
+  if (typeof error?.code === 'string')
+    response.errorCode = error.code
+  const packageResult = isRecord(result?.packageResult) ? result.packageResult : undefined
+  if (typeof packageResult?.kind === 'string')
+    response.failureKind = packageResult.kind
+  if (typeof result?.bundle === 'string')
+    response.bundle = result.bundle
+  if (typeof result?.version === 'string')
+    response.version = result.version
+  if (Array.isArray(result?.pendingBuilds)) {
+    const pending = result.pendingBuilds.filter((name): name is string => typeof name === 'string' && name !== '')
+    // 空数组不透出：只有非空才意味着「这一轮什么都没装，等用户批准」；
+    // 透出空数组会让页面弹一个没有内容的确认框。同样也挡掉杂物项，免得页面渲染出 undefined。
+    if (pending.length > 0)
+      response.pendingBuilds = pending
+  }
+  const output = typeof packageResult?.output === 'string' ? outputTail(packageResult.output) : undefined
+  if (output !== undefined)
+    response.output = output
+  if (typeof error?.diagnostic === 'string' && error.diagnostic !== '') {
+    response.diagnostic = error.diagnostic
+  }
+  // 失败却没有 diagnostic：用输出尾部兜底（二选一，不拼接）——否则页面只剩一个机器码，用户看不到
+  // pnpm 到底说了什么。成功时不做这件事，免得一条顺利的安装也带一句没人看的「诊断」。
+  else if (!response.ok && output !== undefined) {
+    response.diagnostic = output
+  }
+  return response
+}
+
 export interface PluginsAdmin {
   /** 包级主视图（已排序）。 */
   list: () => Promise<PluginsListResponse>
   toggleBundle: (body: PluginBundleToggleBody) => Promise<PluginToggleResponse>
+  /** 安装前检查：装了没、是什么形式、是不是 bundle。**不装任何东西**。 */
+  inspect: (body: PluginInspectBody) => Promise<PluginInspectResponse>
+  /** 安装：需要批准构建脚本时会回 `pendingBuilds` 且这一轮什么都没装。 */
+  install: (body: PluginInstallBody) => Promise<PluginInstallResponse>
+}
+
+/**
+ * 把请求体缩成官方 `InstallBundleOptions`。
+ *
+ * 只在真有内容时带字段：官方的默认值已经覆盖 `enabled: true` / 非 exact 保存 / 用配置的源；
+ * 空的 `approvedBuilds` 传过去只会让官方多一次「这些名字还在待批准里吗」的判断。
+ */
+function installOptionsOf(body: PluginInstallBody): OfficialInstallBundleOptions | undefined {
+  const options: OfficialInstallBundleOptions = {}
+  if (Array.isArray(body?.approvedBuilds) && body.approvedBuilds.length > 0)
+    options.approvedBuilds = [...body.approvedBuilds]
+  if (typeof body?.registry === 'string' && body.registry !== '')
+    options.registry = body.registry
+  return Object.keys(options).length > 0 ? options : undefined
 }
 
 /**
@@ -306,8 +528,24 @@ export function createPluginsAdmin(ctx: HostServiceHub): PluginsAdmin {
     }
     return manager
   }
+  // 安装能力单独判：缺的只是「新一点的宿主」，同一个服务名要给出更准的一句话，
+  // 否则用户看到「服务没挂上」而列表其实好好的，只会以为是面板坏了。
+  const installerOrThrow = (): PluginInstallerService => {
+    const installer = resolvePluginInstaller(ctx)
+    if (installer === undefined) {
+      throw new PluginRequestError(
+        PLUGIN_MANAGER_UNAVAILABLE,
+        'the pluginManager service in this dsh build cannot inspect or install packages',
+      )
+    }
+    return installer
+  }
   return {
     list: async () => ({ bundles: await listPluginBundles(managerOrThrow()) }),
     toggleBundle: async body => toggleBundle(managerOrThrow(), body.name, body.enabled),
+    inspect: async body => toInspectResponse(await installerOrThrow().inspect(body.spec)),
+    install: async body => toInstallResponse(
+      await installerOrThrow().installBundle(body.spec, installOptionsOf(body)),
+    ),
   }
 }

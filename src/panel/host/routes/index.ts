@@ -18,6 +18,8 @@ import mcpToggle from './mcp/toggle/post'
 import openDir from './open/dir/post'
 import pluginBundleToggle from './plugins/bundle/toggle/post'
 import plugins from './plugins/get'
+import pluginInspect from './plugins/inspect/post'
+import pluginInstall from './plugins/install/post'
 import rootsRemove from './roots/delete'
 import roots from './roots/get'
 import rootsAdd from './roots/post'
@@ -69,4 +71,11 @@ export const routes = defineRoutes<ExtensionRouteDeps>((disposer) => {
   // 启停会写用户 `dsh.profile.bundles`。
   disposer.get({ kind: 'exact', path: '/dsh-toolshed/api/plugins' }, plugins)
   disposer.post({ kind: 'exact', path: '/dsh-toolshed/api/plugins/bundle/toggle' }, pluginBundleToggle)
+
+  // 安装插件：检查 + 安装两条独立路径（2.5.0）。**全部交给官方 `pluginManager`**：`inspect` 只读地
+  // 问「这是什么、装了没」；`installBundle` 走官方那套 pnpm + package.json 写盘 + 回滚，
+  // 我们既不自己跑 pnpm 也不自己写 package.json（两套写盘逻辑会打架）。
+  // 路径数 +2，共 22。
+  disposer.post({ kind: 'exact', path: '/dsh-toolshed/api/plugins/inspect' }, pluginInspect)
+  disposer.post({ kind: 'exact', path: '/dsh-toolshed/api/plugins/install' }, pluginInstall)
 })

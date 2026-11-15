@@ -9,13 +9,16 @@
  *  - 服务缺失必须是可识别的机器码（503）——否则整页 500，或更糟：200 + 空列表被误读成「一个插件都没装」；
  *  - 包级投影的排序 / 丢弃规则——照官方 `BundleInfo` 的形状搬字段，官方漂移时要降级而不是 500。
  */
-import type { OfficialBundleInfo, OfficialChangeResult, PluginManagerService } from './plugins'
+import type { OfficialBundleInfo, OfficialChangeResult, PluginInstallerService, PluginManagerService } from './plugins'
 import { describe, expect, it } from 'vitest'
 import {
   createPluginsAdmin,
   listPluginBundles,
   PluginRequestError,
+  resolvePluginInstaller,
   resolvePluginManager,
+  toInspectResponse,
+  toInstallResponse,
   toggleBundle,
 } from './plugins'
 import { PLUGIN_MANAGER_UNAVAILABLE, PLUGIN_SELF_MANAGEMENT } from './plugins.types'
@@ -297,5 +300,295 @@ describe('resolvePluginManager / createPluginsAdmin', () => {
     expect(response.bundles.map(bundle => bundle.name)).toEqual(['dsh-toolshed'])
     // 响应只有 bundles：没有 plugins、也没有任何行级字段。
     expect(Object.keys(response)).toEqual(['bundles'])
+  })
+
+  it('缺安装能力时只有 inspect / install 回 plugin-manager-unavailable，列表与启停照常可用', async () => {
+    const { manager } = fakeManager([TOOLSHED_BUNDLE])
+    const admin = createPluginsAdmin({ get: () => manager })
+
+    // 老宿主的形态：有 listBundles / setBundleEnabled，没有 inspect / installBundle。
+    expect((await admin.list()).bundles.map(bundle => bundle.name)).toEqual(['dsh-toolshed'])
+    expect((await admin.toggleBundle({ name: 'some-bundle', enabled: true })).ok).toBe(true)
+    await expect(admin.inspect({ spec: 'dsh-demo' })).rejects.toMatchObject({ code: PLUGIN_MANAGER_UNAVAILABLE })
+    await expect(admin.install({ spec: 'dsh-demo' })).rejects.toMatchObject({ code: PLUGIN_MANAGER_UNAVAILABLE })
+  })
+})
+
+/** 假安装能力：记下每次调用的入参，返回预设答复。 */
+function fakeInstaller(inspection: unknown, installResult: unknown): {
+  installer: PluginInstallerService
+  inspected: string[]
+  installed: Array<{ spec: string, options?: unknown }>
+} {
+  const inspected: string[] = []
+  const installed: Array<{ spec: string, options?: unknown }> = []
+  return {
+    inspected,
+    installed,
+    installer: {
+      inspect: async (spec: string) => {
+        inspected.push(spec)
+        return inspection
+      },
+      installBundle: async (spec: string, options?: unknown) => {
+        installed.push({ spec, options })
+        return installResult
+      },
+    },
+  }
+}
+
+describe('resolvePluginInstaller：只认 inspect / installBundle', () => {
+  it('只有启停能力的宿主解析不出安装能力（两份契约分开判）', () => {
+    const { manager } = fakeManager()
+
+    expect(resolvePluginInstaller({ get: () => manager })).toBeUndefined()
+    expect(resolvePluginInstaller({ get: () => ({ ...manager, inspect: async () => ({}) }) })).toBeUndefined()
+    expect(resolvePluginInstaller({ get: () => ({ listBundles: async () => [], installBundle: async () => ({}) }) })).toBeUndefined()
+  })
+
+  it('两个方法都在就返回服务，缺 setBundleEnabled 也不影响安装（反过来也成立）', () => {
+    const installer = {
+      listBundles: async () => [],
+      inspect: async () => ({ status: 'accepted', kind: 'registry', bundle: true }),
+      installBundle: async () => ({ changed: true, application: 'applied' }),
+    }
+
+    expect(resolvePluginInstaller({ get: () => installer })).toBe(installer)
+    expect(resolvePluginInstaller({ pluginManager: installer })).toBe(installer)
+  })
+
+  it('ctx 既没有 get 也没有该属性、或拆卸期取服务抛错，都当成不可用', () => {
+    expect(resolvePluginInstaller({})).toBeUndefined()
+    expect(resolvePluginInstaller({ get: () => undefined })).toBeUndefined()
+    expect(resolvePluginInstaller({ get: () => { throw new Error('service disposed') } })).toBeUndefined()
+  })
+
+  it('惰性解析：apply 之后才挂上的安装能力也能拿到', async () => {
+    let installer: PluginInstallerService | undefined
+    const admin = createPluginsAdmin({ get: name => (name === 'pluginManager' ? installer : undefined) })
+
+    await expect(admin.inspect({ spec: 'dsh-demo' })).rejects.toMatchObject({ code: PLUGIN_MANAGER_UNAVAILABLE })
+
+    installer = fakeInstaller({ status: 'accepted', kind: 'registry', name: 'dsh-demo', bundle: true }, {}).installer
+    expect(await admin.inspect({ spec: 'dsh-demo' })).toMatchObject({ status: 'accepted', name: 'dsh-demo' })
+  })
+})
+
+describe('createPluginsAdmin：inspect / install 的透传', () => {
+  it('spec 原样给官方；approvedBuilds / registry 只在给了的时候带（空数组不带）', async () => {
+    const fake = fakeInstaller({ status: 'accepted', kind: 'registry', bundle: true }, { changed: true, application: 'applied' })
+    const admin = createPluginsAdmin({ get: () => fake.installer })
+
+    await admin.inspect({ spec: 'dsh-demo@1.2.3' })
+    expect(fake.inspected).toEqual(['dsh-demo@1.2.3'])
+
+    await admin.install({ spec: 'dsh-demo' })
+    expect(fake.installed[0]).toEqual({ spec: 'dsh-demo', options: undefined })
+
+    await admin.install({ spec: 'dsh-demo', approvedBuilds: ['esbuild'], registry: 'https://registry.npmmirror.com/' })
+    expect(fake.installed[1]).toEqual({
+      spec: 'dsh-demo',
+      options: { approvedBuilds: ['esbuild'], registry: 'https://registry.npmmirror.com/' },
+    })
+
+    // 空的 approvedBuilds 不传给官方：官方会把「名字已不在待批准里」当成拒绝。
+    await admin.install({ spec: 'dsh-demo', approvedBuilds: [] })
+    expect(fake.installed[2].options).toBeUndefined()
+  })
+
+  it('官方不抛异常也不代表成功：application:failed 如实变成 ok:false', async () => {
+    const fake = fakeInstaller({}, {
+      changed: false,
+      application: 'failed',
+      error: { code: 'operation-error', diagnostic: 'ERR_PNPM_NO_MATCHING_VERSION' },
+      packageResult: { exitCode: 1, output: 'ERR_PNPM_NO_MATCHING_VERSION', kind: 'no-matching-version' },
+    })
+    const admin = createPluginsAdmin({ get: () => fake.installer })
+
+    expect(await admin.install({ spec: 'dsh-demo@9.9.9' })).toEqual({
+      ok: false,
+      application: 'failed',
+      changed: false,
+      errorCode: 'operation-error',
+      diagnostic: 'ERR_PNPM_NO_MATCHING_VERSION',
+      failureKind: 'no-matching-version',
+      output: 'ERR_PNPM_NO_MATCHING_VERSION',
+    })
+  })
+})
+
+describe('toInspectResponse（官方 inspection → 线协议）', () => {
+  it('accepted 只搬 status/kind/name/version/description/bundle，registry / host 不透出', () => {
+    expect(toInspectResponse({
+      status: 'accepted',
+      kind: 'registry',
+      name: 'dsh-demo',
+      version: '1.2.3',
+      description: 'demo bundle',
+      bundle: true,
+      registry: 'https://registry.npmjs.org/',
+      host: 'github.com',
+    })).toEqual({
+      status: 'accepted',
+      kind: 'registry',
+      name: 'dsh-demo',
+      version: '1.2.3',
+      description: 'demo bundle',
+      bundle: true,
+    })
+  })
+
+  it('accepted 缺的可选字段不出现（git / tarball 装完才知道包名）', () => {
+    expect(toInspectResponse({ status: 'accepted', kind: 'git', bundle: null }))
+      .toEqual({ status: 'accepted', kind: 'git', bundle: null })
+  })
+
+  it('bundle 读不出布尔值时报 null（「这种形式判断不了」），不猜 true/false', () => {
+    expect(toInspectResponse({ status: 'accepted', kind: 'tarball' }))
+      .toEqual({ status: 'accepted', kind: 'tarball', bundle: null })
+  })
+
+  it('refused 搬 problem / reason，registries 不透出', () => {
+    expect(toInspectResponse({
+      status: 'refused',
+      problem: 'not-a-bundle',
+      reason: 'dsh-demo declares no dsh.bundle',
+      registries: ['https://registry.npmjs.org/'],
+    })).toEqual({ status: 'refused', problem: 'not-a-bundle', reason: 'dsh-demo declares no dsh.bundle' })
+  })
+
+  it('非对象 / 认不出的形状按「拒绝」回，绝不当成检查通过', () => {
+    for (const raw of [undefined, null, 'accepted', 42, [], {}]) {
+      const response = toInspectResponse(raw) as { status: string, problem?: string, reason?: string }
+      expect(response.status, String(raw)).toBe('refused')
+      expect(response.problem).toBe('unknown')
+      expect(typeof response.reason).toBe('string')
+      expect(JSON.stringify(response)).not.toContain('undefined')
+    }
+  })
+
+  it('refused 少了 problem / reason 时用兜底值，页面不会渲染出 undefined', () => {
+    const response = toInspectResponse({ status: 'refused' }) as { status: string, problem: string, reason: string }
+
+    expect(response.status).toBe('refused')
+    expect(response.problem).toBe('unknown')
+    expect(response.reason.length).toBeGreaterThan(0)
+  })
+
+  it('accepted 但没有 kind：不冒充可安装，退回拒绝', () => {
+    expect(toInspectResponse({ status: 'accepted', name: 'dsh-demo', bundle: true }).status).toBe('refused')
+  })
+})
+
+describe('toInstallResponse（官方 ChangeResult → 线协议）', () => {
+  const SUCCESS = {
+    changed: true,
+    application: 'applied',
+    stage: 'install',
+    target: 'dsh-demo',
+    bundle: 'dsh-demo',
+    version: '1.2.3',
+    packageResult: { exitCode: 0, output: 'Progress: resolved 1, reused 0, downloaded 1', truncated: false, logPath: '/tmp/install.log' },
+  }
+
+  it('装成功：ok + 包名版本 + 输出（logPath / stage 这类不透出）', () => {
+    expect(toInstallResponse(SUCCESS)).toEqual({
+      ok: true,
+      application: 'applied',
+      changed: true,
+      bundle: 'dsh-demo',
+      version: '1.2.3',
+      output: 'Progress: resolved 1, reused 0, downloaded 1',
+    })
+  })
+
+  it('restart-required / overridden 也算成功（与启停共用同一套 application 语义）', () => {
+    expect(toInstallResponse({ ...SUCCESS, application: 'restart-required' }).ok).toBe(true)
+    expect(toInstallResponse({ ...SUCCESS, application: 'overridden' }).ok).toBe(true)
+    expect(toInstallResponse({ ...SUCCESS, application: 'cancelled' }).ok).toBe(false)
+  })
+
+  it('failed 带 code：errorCode / diagnostic / failureKind / output 一起回', () => {
+    expect(toInstallResponse({
+      changed: false,
+      application: 'failed',
+      error: { code: 'incompatible-version', diagnostic: 'dsh-demo requires dsh >= 9' },
+      packageResult: { exitCode: 1, output: 'ERR_PNPM_...', truncated: false, logPath: '/tmp/log', kind: 'not-found' },
+    })).toEqual({
+      ok: false,
+      application: 'failed',
+      changed: false,
+      errorCode: 'incompatible-version',
+      diagnostic: 'dsh-demo requires dsh >= 9',
+      failureKind: 'not-found',
+      output: 'ERR_PNPM_...',
+    })
+  })
+
+  it('failed 没有 diagnostic 时用输出尾部兜底（二选一，不拼接）', () => {
+    const response = toInstallResponse({
+      changed: false,
+      application: 'failed',
+      error: { code: 'operation-error' },
+      packageResult: { exitCode: 1, output: 'ERR_PNPM_FETCH_404', truncated: false, logPath: '/tmp/log', kind: 'not-found' },
+    })
+
+    expect(response.diagnostic).toBe('ERR_PNPM_FETCH_404')
+    expect(response.diagnostic).toBe(response.output)
+  })
+
+  it('build-blocked + 非空 pendingBuilds：这一轮什么都没装，页面据此请用户批准', () => {
+    expect(toInstallResponse({
+      changed: false,
+      application: 'failed',
+      error: { code: 'operation-error', diagnostic: 'Ignored build scripts: esbuild' },
+      pendingBuilds: ['esbuild', '@parcel/watcher'],
+      packageResult: { exitCode: 1, output: 'Ignored build scripts: esbuild', truncated: false, logPath: '/tmp/log', kind: 'build-blocked' },
+    })).toEqual({
+      ok: false,
+      application: 'failed',
+      changed: false,
+      errorCode: 'operation-error',
+      diagnostic: 'Ignored build scripts: esbuild',
+      failureKind: 'build-blocked',
+      pendingBuilds: ['esbuild', '@parcel/watcher'],
+      output: 'Ignored build scripts: esbuild',
+    })
+  })
+
+  it('空 / 杂物 pendingBuilds 不出现（空数组会让页面弹一个没有内容的确认框）', () => {
+    expect(toInstallResponse({ ...SUCCESS, pendingBuilds: [] })).not.toHaveProperty('pendingBuilds')
+    expect(toInstallResponse({ ...SUCCESS, pendingBuilds: ['', 42] })).not.toHaveProperty('pendingBuilds')
+    expect(toInstallResponse({ ...SUCCESS, pendingBuilds: ['esbuild', 42] }).pendingBuilds).toEqual(['esbuild'])
+  })
+
+  it('output 超过 8 KiB 只留尾部，并在前面标一行截断说明', () => {
+    const output = `${'a'.repeat(20000)}THE-REAL-REASON`
+    const response = toInstallResponse({
+      changed: false,
+      application: 'failed',
+      error: { code: 'operation-error' },
+      packageResult: { exitCode: 1, output, truncated: true, logPath: '/tmp/log', kind: 'unknown' },
+    })
+
+    expect(response.output.endsWith('THE-REAL-REASON')).toBe(true)
+    expect(response.output.startsWith('[dsh-toolshed]')).toBe(true)
+    // 截断说明一行 + 8 KiB 尾部；不是把整段 20007 字符原样带走。
+    expect(response.output.length).toBeLessThan(8 * 1024 + 200)
+    expect(response.output).not.toContain('a'.repeat(9000))
+  })
+
+  it('恰好 8 KiB 的输出原样透出（没有截断说明）', () => {
+    const output = 'b'.repeat(8 * 1024)
+    const response = toInstallResponse({ changed: true, application: 'applied', packageResult: { exitCode: 0, output } })
+
+    expect(response.output).toEqual(output)
+  })
+
+  it('非对象 / 缺 application 时按失败回，不抛错', () => {
+    expect(toInstallResponse(undefined)).toEqual({ ok: false, application: 'failed', changed: false })
+    expect(toInstallResponse('nope')).toEqual({ ok: false, application: 'failed', changed: false })
+    expect(toInstallResponse({ changed: true })).toEqual({ ok: false, application: 'failed', changed: true })
   })
 })

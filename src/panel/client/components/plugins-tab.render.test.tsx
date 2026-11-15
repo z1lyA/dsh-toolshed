@@ -45,14 +45,16 @@ function card(bundle: PluginBundleView): string {
 }
 
 describe('插件页（纯包级视图）', () => {
-  it('载入态就有标题、包级说明、文字「刷新」、市场按钮、三档筛选与搜索框', () => {
+  it('载入态就有标题、包级说明、文字「刷新」、「安装插件」入口、三档筛选与搜索框', () => {
     const html = renderToStaticMarkup(<PluginsTab t={t} openMarket={noop} />)
 
     expect(html).toContain(t('pluginsTitle'))
     // 说明文案是纯包级口径：一个包可能含多条内部模块，条目级开关在官方页。
     expect(html).toContain(t('pluginsIntroV2'))
     expect(html).toContain(`data-prim="Button">${t('refresh')}<`)
-    expect(html).toContain(t('pluginMarket'))
+    // 「插件市场」按钮已换成「安装插件」弹窗入口（用户诉求：知道包名就能直接装）。
+    expect(html).toContain(t('pluginInstall'))
+    expect(html).toContain(`title="${t('pluginInstallHint')}"`)
     // 默认「第三方」：三档都在，选中态在第三方（SegmentedControl 用 aria-pressed 表示非 tab 组）。
     for (const key of ['pluginsFilterAll', 'pluginsFilterThirdParty', 'pluginsFilterOfficial'] as const)
       expect(html, key).toContain(t(key))
@@ -73,10 +75,14 @@ describe('插件页（纯包级视图）', () => {
       expect((t as (key: string) => string)(key), key).toBe(key)
   })
 
-  it('拿不到市场入口时按钮不渲染（三级降级全失败）', () => {
+  it('拿不到市场入口时：「安装插件」入口照旧，弹窗里那一行市场按钮不存在', () => {
     const html = renderToStaticMarkup(<PluginsTab t={t} />)
 
-    expect(html).not.toContain(t('pluginMarket'))
+    // 弹窗入口是本地能力（检查/安装走宿主转发），不依赖官方市场 bundle。
+    expect(html).toContain(t('pluginInstall'))
+    // 弹窗此时是关闭态，所以底部那行「打开官方插件市场」连渲染都不该有。
+    expect(html).not.toContain(t('pluginInstallMarket'))
+    expect(html).not.toContain(t('pluginInstallIntro'))
     expect(html).not.toContain('undefined')
   })
 

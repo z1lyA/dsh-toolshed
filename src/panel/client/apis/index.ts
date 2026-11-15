@@ -163,3 +163,15 @@ export function getPlugins(options?: FetchOptions) {
 export function postPluginBundleToggle(body: Types.PluginBundleToggleBody, options?: FetchOptions) {
   return ofetch<Types.PluginToggleResponse>("/plugins/bundle/toggle", { baseURL, method: "post", body, ...jsonError, ...options });
 }
+
+// 检查/安装同样要 `...jsonError`：503 `plugin-manager-unavailable` 是「这台机器没有插件管理」，
+// 与「包名写错了」完全不是一件事，只能靠 code 分开，否则页面只能笼统地报「请求失败」。
+/** @method post */
+export function postPluginInspect(body: Types.PluginInspectBody, options?: FetchOptions) {
+  return ofetch<Types.PluginInspectResponse>("/plugins/inspect", { baseURL, method: "post", body, ...jsonError, ...options });
+}
+
+/** @method post */
+export function postPluginInstall(body: Types.PluginInstallBody, options?: FetchOptions) {
+  return ofetch<Types.PluginInstallResponse>("/plugins/install", { baseURL, method: "post", body, ...jsonError, ...options });
+}

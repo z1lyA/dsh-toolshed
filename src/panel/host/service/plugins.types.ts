@@ -61,6 +61,85 @@ export interface PluginBundleToggleBody {
 }
 
 /**
+ * 安装前的检查请求。
+ *
+ * `spec` 就是 pnpm 认的那种安装规格：`name`、`name@1.2.3`、`git+https://…`、本地路径、tarball URL。
+ * 官方 `pluginManager.inspect()` 负责判断它是什么、装了没有、是不是一个 bundle。
+ */
+export interface PluginInspectBody {
+  spec: string
+}
+
+/** 检查通过：能装，且尽量提前告诉用户装的是什么。 */
+export interface PluginInspectAccepted {
+  status: 'accepted'
+  /** `registry` | `path` | `git` | `tarball`。 */
+  kind: string
+  /** 只有 registry / path 这种能提前读到 manifest 的形式才有包名与版本。 */
+  name?: string
+  version?: string
+  /** 包 manifest 里的一句话简介。 */
+  description?: string
+  /** 包是否声明了 `dsh.bundle`；`null` = 这种 spec 形式判断不了（git / tarball 要装完才知道）。 */
+  bundle: boolean | null
+}
+
+/** 检查拒绝：**还没装任何东西**，原因原样带回去。 */
+export interface PluginInspectRefused {
+  status: 'refused'
+  /** `invalid-spec` | `already-installed` | `not-found` | `not-a-package` | `not-a-bundle` | `network` | `unknown`。 */
+  problem: string
+  /** pnpm / registry / 文件系统给的原话。 */
+  reason: string
+}
+
+export type PluginInspectResponse = PluginInspectAccepted | PluginInspectRefused
+
+/** 安装请求。 */
+export interface PluginInstallBody {
+  spec: string
+  /**
+   * 用户已确认允许这些包的**安装脚本**（构建脚本）执行。
+   *
+   * 为什么需要两轮：第一轮官方会返回 `pendingBuilds`（哪些包有要跑的脚本）且**不装**，
+   * 页面把它们列给用户看，用户点「允许并继续」后带这个字段再调一次。
+   */
+  approvedBuilds?: string[]
+  /** 首选 registry；不填就用官方配置的那个（官方还会按顺序回退到备选）。 */
+  registry?: string
+}
+
+/**
+ * 安装结果：官方 `ChangeResult` 里与「装包」相关的部分，外加两条诊断线索。
+ *
+ * 与启停共用 `application` 语义（`applied` / `restart-required` / …），但那三条不足以描述安装失败：
+ * 用户需要知道**是网络、是包不存在、还是要跑构建脚本却没被批准**，所以额外带 `failureKind` 与 `output`。
+ */
+export interface PluginInstallResponse {
+  ok: boolean
+  application: string
+  changed: boolean
+  errorCode?: string
+  diagnostic?: string
+  /**
+   * 失败种类：`pnpm-missing` | `timeout` | `not-found` | `no-matching-version` | `network` |
+   * `disk-full` | `permission` | `build-blocked` | `integrity` | `unknown`。
+   */
+  failureKind?: string
+  /** 装成功的包名与版本（官方装完才报得出来）。 */
+  bundle?: string
+  version?: string
+  /**
+   * 需要用户显式批准才能继续的安装脚本。
+   *
+   * 非空 = 这一轮**什么都没装**，用户点「允许并继续」后带 `approvedBuilds` 再来一次。
+   */
+  pendingBuilds?: string[]
+  /** pnpm 输出的**尾部**（宿主截断到 8 KiB）：失败时这是唯一能定位原因的线索。 */
+  output?: string
+}
+
+/**
  * 启停结果：**原样透出**官方的 `ChangeResult.application`，不做归一化。
  *
  * 为什么不压成 `ok/restartNeeded` 两个布尔：官方有四种真实结局（立即生效 / 需重启 / 被更高优先级

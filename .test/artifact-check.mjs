@@ -57,6 +57,12 @@ const present = [
   // 2.4.0：会话页按工作区分组（组默认折叠），以及插件页不再列出「官方页没有页面的包」
   [client, 'archiveGroupUnassigned'],
   [client, 'archiveGroupSelectAll'],
+  // 2.5.0：「安装插件」弹窗（走官方 inspect + installBundle；构建脚本两轮审批）
+  [client, 'pluginInstallHint'],
+  [client, '/plugins/inspect'],
+  [client, '/plugins/install'],
+  [host, '/dsh-toolshed/api/plugins/inspect'],
+  [host, '/dsh-toolshed/api/plugins/install'],
   // 侧栏「插件」「更多」两行的 DOM 兜底：标记属性与语义锚点都必须在产物里
   [client, 'data-toolshed-hidden'],
   [client, 'aria-haspopup'],

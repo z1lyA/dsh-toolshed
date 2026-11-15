@@ -12,6 +12,7 @@ import { Button, Icon, Input, Puzzle, SegmentedControl, StateDot, Switch, Tag } 
 import { useEffect, useMemo, useState } from 'react'
 import { ApiError, getPlugins, postPluginBundleToggle } from '../apis'
 import { useTimers } from '../hooks/use-timers'
+import { PluginInstallDialog } from './plugins-install-dialog'
 
 /**
  * 本地化文案的兜底解析。
@@ -185,11 +186,12 @@ export function PluginBundleCard({ t, bundle, resolveText, busy, onToggleBundle 
 }
 
 /**
- * 「插件」tab：以 **npm 包**为单位展示 + 包级启停 + 市场入口。
+ * 「插件」tab：以 **npm 包**为单位展示 + 包级启停 + 「安装插件」弹窗入口。
  *
  * 为什么自己不嵌官方页：官方插件页只导出 `NS/PANEL_ID/apply/inject`，没有组件也没有 `render()`，
- * 嵌不进来（spike-client §1.2）。数据与启停都走宿主转发（`/api/plugins*`），市场只给一个
- * 「打开官方页并落到发现 tab」的按钮——市场 UI 不可复用，复刻必然跟着索引格式漂移（§2.5）。
+ * 嵌不进来（spike-client §1.2）。数据、启停与安装都走宿主转发（`/api/plugins*`）；「插件市场」
+ * 这个按钮已经换成「安装插件」弹窗（用户诉求：知道包名就能直接装），浏览/搜索仍交给官方的
+ * 「发现」页——市场 UI 不可复用，复刻必然跟着索引格式漂移（§2.5）。
  */
 export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): ReactElement {
   const [data, setData] = useState<PluginsListResponse | null>(null)
@@ -198,6 +200,8 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
   const [reload, setReload] = useState(0)
+  // 「安装插件」是一个弹窗入口：知道包名的人输入包名就能装，浏览/搜索仍交给官方「发现」页。
+  const [installOpen, setInstallOpen] = useState(false)
   const [banner, setBanner] = useState<{ kind: 'ok' | 'info' | 'error', text: string } | null>(null)
   const [undo, setUndo] = useState<PluginUndoRecord | null>(null)
   const { mounted } = useTimers()
@@ -316,7 +320,7 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
         <span className="dshp-extension__spacer" />
         {/* 文字按钮而不是图标：右上角重启控件已经占了一个旋转图标，两个图标并排会认错。 */}
         <Button variant="ghost" size="sm" disabled={busy} onClick={() => setReload(value => value + 1)}>{t('refresh')}</Button>
-        {openMarket !== undefined && <Button variant="primary" size="sm" title={t('pluginMarketHint')} onClick={openMarket}>{t('pluginMarket')}</Button>}
+        <Button variant="primary" size="sm" title={t('pluginInstallHint')} onClick={() => setInstallOpen(true)}>{t('pluginInstall')}</Button>
       </div>
       {/* 这段说明回答的是「为什么只有这么几个插件」：一个包可能含多条内部模块，条目级开关在官方页。 */}
       <p className="dshp-extension__intro">{t('pluginsIntroV2')}</p>
@@ -385,6 +389,17 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
           ))}
         </ul>
       )}
+      {/*
+        装完不关弹窗（用户要先看到结果），由这里重拉包列表：刚装的包可能还没进可见集
+        （`bundle: false` 的包本来就不该出现），刷新后列表与磁盘一致即可。
+      */}
+      <PluginInstallDialog
+        t={t}
+        open={installOpen}
+        onClose={() => setInstallOpen(false)}
+        openMarket={openMarket}
+        onInstalled={() => setReload(value => value + 1)}
+      />
     </div>
   )
 }

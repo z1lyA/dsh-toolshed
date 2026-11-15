@@ -442,6 +442,82 @@ export default b('extension', [
     gap: '10px',
     flexWrap: 'wrap',
   }),
+  // 「安装插件」弹窗：结果区按结局着色（装好/要批准/失败），只有一块内容，不做卡片网格。
+  // 新增的这些条目只属于这个弹窗，别和别的页共用。
+  e('plugin-install-state', {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '13px',
+    lineHeight: '20px',
+    color: secondary,
+  }),
+  e('plugin-install-result', {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    border: `1px solid ${border}`,
+    borderRadius: '10px',
+    background: layer1,
+    padding: '10px 12px',
+  }, [
+    c('&[data-kind="ok"]', {
+      borderColor: 'color-mix(in srgb,var(--dsw-alias-state-success-primary) 35%,transparent)',
+    }),
+    c('&[data-kind="error"]', {
+      borderColor: 'color-mix(in srgb,var(--dsw-alias-state-error-primary) 35%,transparent)',
+    }),
+    c('&[data-kind="warn"]', {
+      borderColor: `color-mix(in srgb,${business} 35%,transparent)`,
+    }),
+  ]),
+  e('plugin-install-name', {
+    fontFamily: 'var(--ds-font-family-code)',
+    fontSize: '13px',
+    lineHeight: '20px',
+    color: primary,
+    wordBreak: 'break-all',
+  }),
+  e('plugin-install-note', {
+    margin: '0',
+    fontSize: '12px',
+    lineHeight: '18px',
+    color: secondary,
+  }),
+  e('plugin-install-block', { display: 'flex', flexDirection: 'column', gap: '4px' }),
+  e('plugin-install-label', { fontSize: '12px', lineHeight: '18px', color: tertiary }),
+  // pnpm 的报错通常很长：限高等宽滚动，别把弹窗撑成一整页日志。
+  e('plugin-install-output', {
+    margin: '0',
+    maxHeight: '200px',
+    overflow: 'auto',
+    border: `1px solid ${border}`,
+    borderRadius: '8px',
+    padding: '8px 10px',
+    background: layer3,
+    color: secondary,
+    fontFamily: 'var(--ds-font-family-code)',
+    fontSize: '11px',
+    lineHeight: '16px',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-all',
+  }),
+  e('plugin-install-builds', {
+    margin: '0',
+    paddingLeft: '18px',
+    color: secondary,
+    fontFamily: 'var(--ds-font-family-code)',
+    fontSize: '12px',
+    lineHeight: '18px',
+    wordBreak: 'break-all',
+  }),
+  e('plugin-install-details', {
+    fontSize: '12px',
+    lineHeight: '18px',
+    color: secondary,
+  }, [
+    c('& summary', { cursor: 'pointer', color: tertiary }),
+  ]),
   e('import-scroll', {
     display: 'flex',
     flexDirection: 'column',

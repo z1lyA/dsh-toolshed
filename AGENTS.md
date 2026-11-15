@@ -43,7 +43,7 @@ pnpm install
 pnpm typecheck     # tsc --noEmit（上游代码宽松，故 strict: false）
 pnpm build         # node scripts/build.mjs
 pnpm test          # node scripts/run-tests.mjs（签绑定 + 挑非 hardened Node，见约束 3）
-node .test/host-smoke.mjs 20   # 不起 DSH：mock ctx 调 apply()，数 webServer.register 的行数（应为 20）
+node .test/host-smoke.mjs 22   # 不起 DSH：mock ctx 调 apply()，数 webServer.register 的行数（应为 22）
 ```
 
 > **typecheck 需要宿主提供的 `@deepseek-ai/*` 类型**（约束 4 让它们保持 external）。作者机器上这些类型来自
@@ -83,7 +83,7 @@ curl -s http://127.0.0.1:<port>/dsh-toolshed/api/skills
 ```
 
 host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.js`，用带 `webServer` / `skills` / `connection` / `logger` / `on`
-的 mock ctx 调 `apply(ctx, { profile: 'desktop' })`，应注册 **20** 条路由且不抛错（`.test/host-smoke.mjs` 就是它）。
+的 mock ctx 调 `apply(ctx, { profile: 'desktop' })`，应注册 **22** 条路由且不抛错（`.test/host-smoke.mjs` 就是它）。
 
 ## 约定
 
@@ -144,6 +144,16 @@ host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.
   持久终端 / worktree 工具）——它们在官方页里连卡片都没有，其中 `dsh-base` 一停就起不来。
   官方**新增**一个会让我们多显示一项（可接受），官方**改名**会让旧名字冒出来；「我们的列表里有官方页没有的包」
   时先来这里对一遍。
+- **安装插件走官方 `inspect` + `installBundle`**（`service/plugins.ts` 的 `resolvePluginInstaller`），
+  **绝不**自己跑 pnpm、不自己写 `package.json` / `pnpm-lock.yaml`：
+  - `POST /api/plugins/inspect` 只识别（`invalid-spec` / `already-installed` / `not-found` / `not-a-package` /
+    `not-a-bundle` / `network`），**不改任何文件**；`POST /api/plugins/install` 才真的装。
+  - **构建脚本是两轮审批**：第一轮官方**什么都不装**，回 `pendingBuilds`；页面列给用户看，用户点「允许并继续」
+    后带 `approvedBuilds` 再调一次。判「什么都没装」要**先看 `pendingBuilds` 非空**，
+    别看 `errorCode`（官方那一轮是 `application:'failed'` + `error.code:'operation-error'`）。
+  - `inspect` 的签名是 `inspect(spec, options?, signal?)`——将来要传 registry 得放进**第二个对象参数**，别当 signal。
+  - 安装入口的判据是「先检查通过才能装」：`inspect` 不可用（503）时安装按钮不可点。
+  - 安装结果除 `application` 外还带 `failureKind` 与 `output`（宿主截到尾部 8 KiB）：失败时那是唯一线索。
 - **侧栏自带的「插件」行是 DOM 兜底隐藏的，「更多」只在安全时才藏**（`register/sidebar-tweaks.ts`），
   属**已知易碎**方案：官方 `ctx.slots` 没有 `when/hidden`、不能反注册他人条目，pins 还把 `plugins` 写死常驻，
   只有 DOM 一条路。定位只用语义锚点（`[data-slot="sidebar.panellist"]` 认 nav、运行时按槽条目 label 反查

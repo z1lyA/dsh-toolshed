@@ -180,11 +180,23 @@ lists every row of a package.)
   `sdk` / `sdk-minimal` profile templates — and `dsh-base` cannot be switched off at all). The list mirrors the official
   `HIDDEN_BUNDLES`; when the two disagree, the official page wins.
 
-The **Plugin market** button does **not** reimplement the market: it opens the official Plugins page via
-`pluginNavigation.openList()`, falling back to `ctx.layout.selectPanel('plugins')`, and then **clicks that page's
-Discover tab** (the official API only exposes `openList` / `openBundle`, both pinning the page to Installed, so this
-last step is a DOM fallback: the `${tabsId}-<tabId>` id suffix or the tab label; when it misses, the page simply stays
-on Installed). If neither entry point exists the button is not rendered.
+The **Plugin market** button opens an **Install plugin** dialog (it does **not** rebuild the official Discover page):
+
+- Type a `package name` / `name@1.2.3` / `git+https://…` / local path / tarball URL → **Check** → see what was recognised
+  (name, version, one-line description, whether it is a DSH bundle at all; git and tarball specs can only be confirmed
+  once installed).
+- **Install** goes through the official `pluginManager.installBundle()` — this panel never runs pnpm itself and never
+  writes `package.json`. When the package needs to run **build scripts**, the host installs nothing and answers with
+  `pendingBuilds`; the dialog lists those packages and **Allow and continue** retries with `approvedBuilds`.
+- The outcome is reported verbatim: `applied` / `restart-required` (restart DSH), or the failure kind (network, package
+  not found, pnpm missing, unapproved scripts, …) plus the tail of the pnpm output, ready to paste into an issue.
+- The **market catalog** (your indexes, search, detail pages, version lists) still lives on the official page: the
+  dialog's footer button opens the official Plugins page on its Discover tab.
+
+> Why not embed the official Discover page: the market client only exports `apply` (it registers its `DiscoverSection`
+> into the official page's `plugins.tab`), with no component and no `render()`; cloning it would drift along with the
+> market index and detail-document formats. And "install a package by name" does not need the index at all — it is a
+> thin shell over the official `installBundle`.
 
 > **Known limitation (fragile)**: to funnel the entry points into this panel, `register/sidebar-tweaks.ts` hides the
 > sidebar's own **Plugins** row (the official build hard-codes it as always present, so it never gets lost) and hides

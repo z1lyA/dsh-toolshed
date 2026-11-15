@@ -184,10 +184,20 @@ pnpm install --dir ~/.dsh/profiles/<profile>
   profile 模板要用的基础组合；`dsh-base` 更是一停就起不来）。名单是官方 `HIDDEN_BUNDLES` 的镜像，
   官方新增/改名时以官方页为准。
 
-「插件市场」按钮**不复刻**市场 UI：它按 `pluginNavigation.openList()` → `ctx.layout.selectPanel('plugins')`
-的顺序打开官方插件页，然后**再点那一页的「发现」tab**（官方只暴露了 `openList` / `openBundle`，两者都强制
-停在「已安装」，所以这一步是 DOM 兜底：按 `SegmentedTabs` 的 `${tabsId}-<tabId>` 后缀或标签文本点击，
-命中不到就安静地停在「已安装」）。两条入口都拿不到时按钮不渲染。
+「插件市场」按钮打开的是一个**「安装插件」弹窗**（不是复刻官方「发现」页）：
+
+- 输入 `包名` / `name@1.2.3` / `git+https://…` / 本地路径 / tarball URL → 「检查」→ 显示识别结果
+  （包名、版本、一句话简介、是不是 DSH 插件包；git / tarball 这种形式要装完才确认得了）。
+- 「安装」走官方 `pluginManager.installBundle()`（**本站不自己跑 pnpm、不自己写 `package.json`**）。
+  安装要执行**构建脚本**时官方不会装，而是回一份 `pendingBuilds`：弹窗列出这些包名，点「允许并继续」
+  才带 `approvedBuilds` 再调一次。
+- 结果如实显示 `applied` / `restart-required`（需要重启 DSH）或失败种类（网络、包不存在、pnpm 缺失、
+  脚本未批准……）加 pnpm 输出尾部，方便直接贴进 issue。
+- 想看**市场目录**（我设的索引、搜索、详情页、版本列表）仍在官方页：弹窗底部按钮会打开官方插件页的「发现」tab。
+
+> 为什么不把官方「发现」页搬进来：市场客户端只导出 `apply`（把它的 `DiscoverSection` 注册到官方页的
+> `plugins.tab`），既没有组件也没有 `render()`；复刻一遍会跟着市场索引与详情文档的格式一起漂移。
+> 而「输入包名直接装」这件事**根本不需要市场索引**——它只是官方 `installBundle` 的一层壳。
 
 > **已知限制（易碎）**：为了把入口收敛到本面板，`register/sidebar-tweaks.ts` 会隐藏侧栏自带的
 > 「插件」行（官方把它写死常驻，不会丢），并**在安全时**隐藏「更多」。官方 `ctx.slots` 没有「隐藏/条件注册」
@@ -248,16 +258,18 @@ Web / CLI 会如实显示「不可用」。重启会中断当前回合，请先�
 | 方法 | 路径 |
 | --- | --- |
 | GET | `/dsh-toolshed/api/skills`、`/api/mcp`、`/api/skill?name=`、`/api/roots`、`/api/import/scan`、`/api/archived`、`/api/plugins`、`/api/host/restart` |
-| POST | `/api/mcp`、`/api/mcp/toggle`、`/api/mcp/check`、`/api/mcp/copy`、`/api/skills/refresh`、`/api/skill`、`/api/skill/policy`、`/api/import/apply`、`/api/roots`、`/api/open/dir`、`/api/plugins/bundle/toggle`、`/api/host/restart`、`/api/archive/plan`、`/api/archive/unarchive`、`/api/archive/pending/cancel` |
+| POST | `/api/mcp`、`/api/mcp/toggle`、`/api/mcp/check`、`/api/mcp/copy`、`/api/skills/refresh`、`/api/skill`、`/api/skill/policy`、`/api/import/apply`、`/api/roots`、`/api/open/dir`、`/api/plugins/bundle/toggle`、`/api/plugins/inspect`、`/api/plugins/install`、`/api/host/restart`、`/api/archive/plan`、`/api/archive/unarchive`、`/api/archive/pending/cancel` |
 | DELETE | `/api/mcp`、`/api/skill`、`/api/roots`、`/api/archive` |
 
-`defineRoutes` 按 `(kind, path)` 收敛，同一路径的多个方法只占一行 `webServer.register`：2.3.0 起共 **20** 行。
+`defineRoutes` 按 `(kind, path)` 收敛，同一路径的多个方法只占一行 `webServer.register`：2.5.0 起共 **22** 行。
 错误体统一是 `{ error, code }`（重启被挡住时多一个 `blockers` 数组），面板靠 `code` 分支。
 `/api/plugins` 在缺少官方 `pluginManager` 服务时回 503 `plugin-manager-unavailable`；
 `/api/plugins/bundle/toggle` 在「停用 dsh-toolshed 自己」时回 409 `self-management`，
 正常请求一律 200（`application: 'failed'` 也是 200 —— 那是业务结局，不是传输错误）。
 `GET /api/plugins` 只返回 `{ bundles }`：插件页以包为单位，Loader 条目不再出现在线协议里
 （2.3.0 删掉了行级路由 `/api/plugins/toggle`）。
+`/api/plugins/inspect` 只做识别（不改任何文件），`/api/plugins/install` 才会真的跑 pnpm；
+后者把官方 `ChangeResult` 里与装包有关的部分投影出来（含 `pendingBuilds` 与 pnpm 输出尾部）。
 
 ## 🛠 开发
 
