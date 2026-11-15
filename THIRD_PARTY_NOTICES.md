@@ -48,15 +48,19 @@ terms, these additional terms prevail.
 
 Copyright (c) 2026 deepseek-harness-desktop contributors
 
-## anthropics/skills / vercel-labs/skills（随包技能）
+## anthropics/skills · vercel-labs/skills（**2.6.4 起不再随包分发**）
 
-- `skills/skill-creator` — <https://github.com/anthropics/skills>，Apache-2.0，`LICENSE.txt` 一并保留
-- `skills/find-skills` — <https://github.com/vercel-labs/skills>，MIT，`LICENSE` 一并保留
-- 两个目录都取自上游 `dsh-tauri-panel-extension` 的发布产物（`files: ["skills"]`），**逐字节相同**
+上游 `dsh-tauri-panel-extension` 用 `files: ["skills"]` 随包带过两个技能，本仓库 2.0.x–2.6.3 也逐字节补回：
 
-「新建技能」预填的 `/skill-creator` 是一条**技能**而不是内置命令：宿主只把技能目录里真实存在的
-条目认成 `/名字`，所以这个目录必须随包发布，否则输入框里的 `/skill-creator` 只是普通文本
-（不高亮、点不开、发送后也不会加载任何技能）。
+- `skills/skill-creator` — <https://github.com/anthropics/skills>，Apache-2.0
+- `skills/find-skills` — <https://github.com/vercel-labs/skills>，MIT
+
+**2.6.4 起两个目录都已从本仓库移除**（用户要求精简：`find-skills` 与 `~/.agents/skills/find-skills` 内容相同、
+只差换行符；`skill-creator` 也改由用户放在 `~/.agents/skills`）。因此本仓库不再分发它们，许可声明仅作为历史沿用保留。
+
+对行为的影响：「新建技能」预填的 `/skill-creator` 是一条**技能**而不是内置命令——宿主只把技能目录里真实存在的
+条目认成 `/名字`。技能不存在时，输入框里的 `/skill-creator` 只是普通文本（不高亮、点不开、发送后也不会加载任何
+技能）。所以**技能页会检测 `skill-creator` 是否在列**：不在就把「新建技能」按钮禁用并在 `title` 里说明怎么装。
 
 ---
 
@@ -90,8 +94,7 @@ Copyright (c) 2026 deepseek-harness-desktop contributors
 - `src/panel/host/service/profile.ts`：补充 `DSH_PROFILE` / `DSH_PROFILE_DIR` / 启动参数探测，使其在 DSH Web / Desktop 上正确解析当前 profile。
 - 插件 id 与 HTTP 路由前缀为 `dsh-toolshed`（`/dsh-toolshed/api/*`），与上游插件 id 不同，可共存。
 - 移除对 Tauri 运行时的引用路径：Tauri 专属模块（invoke / listen / iframe 桥）保留在 vendor 中但不被任何入口引用，产物不会访问 `window.__TAURI__`。
-- 补回上游随包的 `skills/`（`skill-creator` + `find-skills`，与上游发布产物逐字节相同；
-  `package.json` 的 `files` 同步补 `skills`），见上。
+- ~~补回上游随包的 `skills/`~~（`skill-creator` + `find-skills`）：2.6.4 起移除，见上。
 - **1.1.0**（沿用上游版本号序列）：面板新增「已归档」与「服务」两个 tab；`/host/restart` 的实现被换成本仓库
   维护者自己那套桌面进程级重启（见上一节），构建新增第三个入口 `lib/restart-helper.js`；路由行数 13 → 18。
 - **1.2.0**：取消「服务」页，重启改到标签页行最右侧（`components/restart-control.tsx`）；移除插件市场收编

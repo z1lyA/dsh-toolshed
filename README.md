@@ -60,10 +60,6 @@ src/                          ← 活代码：从产物入口走得到的部分
 
 vendor-archive/               ← 走不到产物入口的 vendor 子树（Tauri 专属桥、未搬运模块的测试）
                                 不参与构建 / typecheck / 测试，只作上游对照
-
-skills/                       ← 随包发布的技能（host 半按 package.json 的 files 一起带上）
-  skill-creator/                「新建技能」预填的 /skill-creator 靠它成立，见下
-  find-skills/                  与上游发布产物逐字节相同
 ```
 
 产物三个文件：`lib/index.js`（host 半，ESM）、`lib/client.js`（client 半，DSH ModuleLoader CJS）与
@@ -85,10 +81,12 @@ skills/                       ← 随包发布的技能（host 半按 package.js
    现在按四级退级：官方 `sessions.create({ workspaceId })` 在**当前会话所属工作区**新建一条对话 → 适配层投影回的
    `workspaces.connectWorkspace` → 会话不属于任何工作区时按它的 `cwd` 建 → 实在无处可建才复用活跃会话。
    点一次「新建技能」不再抢走你正在写的那条对话。
-5. **随包技能 `skills/`**：`/skill-creator` 是一条**技能**，不是内置命令——宿主只把技能目录里真实存在的条目
-   认成 `/名字`。上游用 `files: ["skills"]` 打包了 anthropics/skills 的 `skill-creator` 与 vercel-labs/skills 的
-   `find-skills`，本仓库按上游发布产物逐字节补回；缺了它，输入框里预填的 `/skill-creator` 就是普通文本：
-   不高亮、点不开、发送后也不会加载任何技能。
+5. **不再随包带技能（2.6.4）**：`/skill-creator` 是一条**技能**，不是内置命令——宿主只把技能目录里真实存在的
+   条目认成 `/名字`。上游用 `files: ["skills"]` 打包了 anthropics/skills 的 `skill-creator` 与 vercel-labs/skills 的
+   `find-skills`，本仓库 2.0.x–2.6.3 也逐字节补回；2.6.4 起两个目录都移除（`find-skills` 与
+   `~/.agents/skills/find-skills` 内容相同，`skill-creator` 改由用户放进 `~/.agents/skills`）。
+   **后果**：技能没装时，预填的 `/skill-creator` 只是普通文本（不高亮、点不开、发送后也不加载技能）——
+   所以技能页会检测它是否在列，不在就把「新建技能」按钮禁用并在悬停提示里说明怎么装。
 6. **插件市场收编已移除（1.2.0）**：上游用 iframe（`window.parent !== window`）才收编 `dshmarket`，那是给 Tauri 壳用的；
    1.0.5 起本插件改成「只要 `dshmarket` 发布 `render` 就嵌进市场 tab」，1.2.0 起**整段移除**——
    市场是独立插件、低频，占用面板标签页不划算；装了 `dshmarket` 就继续用它的设置页入口。

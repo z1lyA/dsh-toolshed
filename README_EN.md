@@ -55,10 +55,6 @@ src/                  ← live code: everything reachable from the product entri
 
 vendor-archive/       ← vendored subtrees unreachable from the product entries (Tauri-only bridges,
                         tests of modules that were never vendored); out of build / typecheck / tests
-
-skills/               ← skills shipped with the package (host half mounts them via package.json "files")
-  skill-creator/        the /skill-creator prefill only works because it exists
-  find-skills/          byte-identical to the upstream release artifact
 ```
 
 Two artifacts — three since 1.1.0: `lib/index.js` (host half, ESM), `lib/client.js` (client half, DSH ModuleLoader CJS)
@@ -76,11 +72,13 @@ killed right after, so inlining it into the main bundle would take it down too).
    **new conversation in the workspace of the current session** → the adapter-projected `workspaces.connectWorkspace`
    → a session that belongs to no workspace is followed by its `cwd` → reuse of the active session only when nothing
    else can host the draft. Clicking "New skill" no longer hijacks the conversation you are writing in.
-5. **Bundled `skills/`** — `/skill-creator` is a *skill*, not a built-in command: the host recognises only entries
-   that really exist under a skill root. Upstream shipped anthropics/skills' `skill-creator` and vercel-labs/skills'
-   `find-skills` through `files: ["skills"]`; this repo restores both, byte-identical to the upstream release
-   artifact. Without them the prefilled `/skill-creator` is plain text — no highlight, no click-through, and nothing
-   loads on send.
+5. **No bundled skills any more (2.6.4)** — `/skill-creator` is a *skill*, not a built-in command: the host recognises
+   only entries that really exist under a skill root. Upstream shipped anthropics/skills' `skill-creator` and
+   vercel-labs/skills' `find-skills` through `files: ["skills"]`, and this repo restored both (2.0.x–2.6.3); 2.6.4
+   removes them (`find-skills` is identical to `~/.agents/skills/find-skills`, and `skill-creator` now lives in the
+   user's `~/.agents/skills`). **Consequence**: without the skill installed the prefilled `/skill-creator` is plain
+   text (no highlight, no click-through, nothing loads on send), so the Skills tab checks whether it is listed and
+   disables **New skill** with a tooltip explaining how to install it.
 6. **Plugin-market embedding removed (1.2.0)** — upstream only embedded `dshmarket` inside the Tauri iframe
    (`window.parent !== window`); 1.0.5 made it appear whenever `render` was published. Since 1.2.0 the whole
    integration is **gone**: the market is a separate, low-frequency plugin and does not deserve a tab here, so an

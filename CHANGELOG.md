@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.6.4] — 2026-11-15
+
+### Removed
+
+- **不再随包带 `skills/`**（`find-skills`、`skill-creator` 两个目录与 `package.json` 的 `files: ["skills"]` 一并删除）。
+  - `find-skills`：与用户级 `~/.agents/skills/find-skills` 内容逐字节相同（只差换行符），自带的那份只会因为
+    DSH 的 rank 顺序（`custom 300` < `user-agents 500`）抢走标签，让整组技能显示成「自定义」。
+  - `skill-creator`：按用户要求移到 `~/.agents/skills/skill-creator`（用户已经装好），插件里不再重复一份。
+
+### Added
+
+- **「新建技能」按钮会先确认 `/skill-creator` 技能在不在**：`/skill-creator` 是一条技能而不是内置命令，
+  技能不存在时预填的文本只是普通文本。现在不在列就把按钮禁用，并在 `title` 里说明把它放到
+  `~/.agents/skills`（或 `~/.dsh/skills`）后刷新即可。
+
+### Notes
+
+- 移除后「自定义」这个类别在本机为空（面板只在来源类别 ≥ 2 时显示筛选行）；技能页只剩「用户」等正常类别。
+
 ## [2.6.3] — 2026-11-15
 
 ### Changed

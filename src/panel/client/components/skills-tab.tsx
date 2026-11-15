@@ -183,6 +183,13 @@ export function SkillsTab({ t, createSkill }: SkillsTabProps): ReactElement {
   // 按 source 分会看到两个同名标签（见 skills-tab.utils 的 SOURCE_FAMILIES 注释）。
   const filtered = useMemo(() => orderBy((skills ?? []).filter(skill => (sourceFilter === 'all' || sourceFamilyOf(skill.source) === sourceFilter) && (needle === '' || skill.name.toLowerCase().includes(needle) || skill.description.toLowerCase().includes(needle))), [skill => skill.repository === undefined]), [needle, skills, sourceFilter])
   const sources = skills === null ? [] : sourceFamiliesOf(skills)
+  /**
+   * `/skill-creator` 这个技能装没装（`undefined` = 列表还没加载完，别急着禁用按钮）。
+   *
+   * 判据是宿主报的技能名（`SKILL.md` 的 `name`，与目录名一致）：2.6.4 起本插件不再随包带它，
+   * 用户可能没装，而预填的 `/skill-creator` 在技能不存在时只是普通文本。
+   */
+  const skillCreatorReady = skills === null ? undefined : skills.some(skill => skill.name === 'skill-creator')
   const readOnly = editor?.mode === 'view'
 
   return (
@@ -203,7 +210,26 @@ export function SkillsTab({ t, createSkill }: SkillsTabProps): ReactElement {
         >
           {t('importRepository')}
         </Button>
-        <Button variant="primary" size="sm" disabled={busy} onClick={() => void doCreate()}>{t('newSkill')}</Button>
+        {/*
+          「新建技能」= 开新会话并预填 `/skill-creator `——而 `/skill-creator` 是一条**技能**，
+          不是内置命令（宿主只把技能目录里真实存在的条目认成 `/名字`）。
+          2.6.4 起本插件不再随包带这个技能，所以要先看它到底在不在：不在就把按钮禁用并说明怎么办，
+          别让用户点了之后得到一段普通文本。
+        */}
+        <span
+          className="dshp-extension__tip"
+          title={skillCreatorReady === false ? t('skillCreatorMissing') : undefined}
+        >
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={busy || skillCreatorReady === false}
+            title={skillCreatorReady === false ? t('skillCreatorMissing') : undefined}
+            onClick={() => void doCreate()}
+          >
+            {t('newSkill')}
+          </Button>
+        </span>
 
       </div>
       <p className="dshp-extension__intro">{t('skillsIntro')}</p>
