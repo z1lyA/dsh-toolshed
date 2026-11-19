@@ -12,15 +12,8 @@ export type ResolveLocalizedText = (text: LocalizedTextView) => string
 export interface PluginsTabProps {
   t: Translate
   /**
-   * 「安装插件」弹窗里的「去官方页逛市场」入口（落在官方页的「发现」tab）。
-   *
-   * 由 register 层用 `ctx` 实现（组件本身不碰 ctx：SSR 冒烟拿不到上下文）。
-   * 三级降级全拿不到时传 `undefined` —— 按钮**不渲染**，而不是渲染一个点了没反应的按钮。
-   */
-  openMarket?: () => void
-  /**
    * 「官方插件页」入口（落在官方页的「已安装」tab）：本页只管第三方包，
-   * 官方包的启停 / 卸载 / 换版本都去官方页做。同样缺席就不渲染按钮。
+   * 官方包的启停 / 卸载 / 换版本都去官方页做。拿不到就不渲染按钮。
    */
   openOfficialPage?: () => void
   /** 包标题 / 简介的解析器；缺席时组件退回 `en`（见 `localizedTextOf`）。 */

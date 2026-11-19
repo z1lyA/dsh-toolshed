@@ -2,7 +2,7 @@ import type { EventHandlerRequest } from 'dsh-tauri'
 import type { ActionResult, SkillOpenBody } from '../../index.types'
 import { mkdirSync } from 'node:fs'
 import { defineEventHandler, readBody } from 'dsh-tauri'
-import { SKILLS_DATA_DIR } from '../../../config/constants'
+import { AGENTS_SKILLS_DIR, SKILLS_DATA_DIR } from '../../../config/constants'
 import { opener } from '../../../service/opener'
 import { skills } from '../../../service/skills'
 
@@ -18,7 +18,12 @@ export default defineEventHandler<EventHandlerRequest, Promise<ActionResult | { 
   }
   try {
     let dir: string | undefined
-    if (body.target === 'user-skills' || body.target === 'plugin-state') {
+    if (body.target === 'user-skills') {
+      // 用户技能实际住在 DSH 原生的 `~/.agents/skills`（0.2.2 起），不是我们的 `~/.dsh/skills`。
+      dir = AGENTS_SKILLS_DIR
+      mkdirSync(dir, { recursive: true })
+    }
+    else if (body.target === 'plugin-state') {
       dir = SKILLS_DATA_DIR
       mkdirSync(dir, { recursive: true })
     }

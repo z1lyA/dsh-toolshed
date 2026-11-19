@@ -45,16 +45,17 @@ function card(bundle: PluginBundleView): string {
 }
 
 describe('插件页（纯包级视图）', () => {
-  it('载入态就有标题、包级说明、文字「刷新」、「安装插件」入口与搜索框；不再有官方/第三方筛选', () => {
-    const html = renderToStaticMarkup(<PluginsTab t={t} openMarket={noop} />)
+  it('载入态就有标题、包级说明、「安装插件」入口与搜索框；没有刷新按钮、没有官方/第三方筛选', () => {
+    const html = renderToStaticMarkup(<PluginsTab t={t} />)
 
     expect(html).toContain(t('pluginsTitle'))
     // 说明文案是纯包级口径：一个包可能含多条内部模块，条目级开关在官方页。
     expect(html).toContain(t('pluginsIntroV2'))
-    expect(html).toContain(`data-prim="Button">${t('refresh')}<`)
     // 「插件市场」按钮已换成「安装插件」弹窗入口（用户诉求：知道包名就能直接装）。
     expect(html).toContain(t('pluginInstall'))
     expect(html).toContain(`title="${t('pluginInstallHint')}"`)
+    // 2.9.1：刷新按钮删掉（进页面自动加载、操作后自动重拉）。
+    expect(html).not.toContain(`data-prim="Button">${t('refresh')}<`)
     // 2.9.0：官方包不在本页列（去官方插件页管），所以三档筛选也一起删了。
     for (const key of ['pluginsFilterAll', 'pluginsFilterThirdParty', 'pluginsFilterOfficial'])
       expect((t as (key: string) => string)(key), key).toBe(key)
@@ -65,11 +66,11 @@ describe('插件页（纯包级视图）', () => {
   })
 
   it('有 openOfficialPage 时才渲染「官方插件页」入口', () => {
-    const withEntry = renderToStaticMarkup(<PluginsTab t={t} openMarket={noop} openOfficialPage={noop} />)
+    const withEntry = renderToStaticMarkup(<PluginsTab t={t} openOfficialPage={noop} />)
     expect(withEntry).toContain(t('pluginOfficialPage'))
     expect(withEntry).toContain(`title="${t('pluginOfficialHint')}"`)
 
-    const withoutEntry = renderToStaticMarkup(<PluginsTab t={t} openMarket={noop} />)
+    const withoutEntry = renderToStaticMarkup(<PluginsTab t={t} />)
     expect(withoutEntry).not.toContain(t('pluginOfficialPage'))
   })
 

@@ -40,8 +40,8 @@ function resultOf(overrides: Partial<PluginInstallResultProps>): string {
 }
 
 describe('安装插件弹窗（输入态）', () => {
-  it('展开时：说明、标签、输入框、检查与安装、底部市场入口都在', () => {
-    const html = renderToStaticMarkup(<PluginInstallDialog t={t} open onClose={noop} openMarket={noop} />)
+  it('展开时：说明、标签、输入框、检查与安装都在；不再有「打开官方插件市场」那一行', () => {
+    const html = renderToStaticMarkup(<PluginInstallDialog t={t} open onClose={noop} />)
 
     expect(html).toContain(t('pluginInstallIntro'))
     expect(html).toContain(t('pluginInstallSpecLabel'))
@@ -50,24 +50,16 @@ describe('安装插件弹窗（输入态）', () => {
     expect(html).toContain(t('pluginInstallEmptySpec'))
     expect(html).toContain(t('pluginInstallCheck'))
     expect(html).toContain(t('pluginInstallDo'))
-    // 浏览/搜索仍归官方「发现」页：底部只留一个跳转按钮。
-    expect(html).toContain(t('pluginInstallMarket'))
+    // 2.9.1：官方页入口统一挪到工具栏的「官方插件页」，弹窗里那一行删掉（用户要求，避免重复）。
+    expect(html).not.toContain(t('pluginInstallMarket'))
     // 弹窗替身只渲染 children，不转发 className —— 容器/滚动 class 只在真机可见，这里不硬断。
     // 空输入 + 还没检查：两个动作都禁用（避免跑一次注定失败的 pnpm）。
     expect(html).toContain('data-disabled="true"')
     expect(html).not.toContain('undefined')
   })
 
-  it('没有市场入口时不渲染那一行按钮，但「安装插件」弹窗本身仍在', () => {
-    const html = renderToStaticMarkup(<PluginInstallDialog t={t} open onClose={noop} />)
-
-    expect(html).toContain('data-prim="Input"')
-    expect(html).not.toContain(t('pluginInstallMarket'))
-    expect(html).not.toContain('undefined')
-  })
-
   it('关闭态不渲染表单内容（弹窗开关归原语管，树里不必留一份空表单）', () => {
-    const html = renderToStaticMarkup(<PluginInstallDialog t={t} open={false} onClose={noop} openMarket={noop} />)
+    const html = renderToStaticMarkup(<PluginInstallDialog t={t} open={false} onClose={noop} />)
 
     expect(html).not.toContain(t('pluginInstallIntro'))
     expect(html).not.toContain('data-prim="Input"')

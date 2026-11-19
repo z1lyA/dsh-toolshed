@@ -231,7 +231,7 @@ export function PluginBundleCard({ t, bundle, resolveText, busy, update, updatin
  * 这个按钮已经换成「安装插件」弹窗（用户诉求：知道包名就能直接装），浏览/搜索仍交给官方的
  * 「发现」页——市场 UI 不可复用，复刻必然跟着索引格式漂移（§2.5）。
  */
-export function PluginsTab({ t, openMarket, openOfficialPage, resolveText }: PluginsTabProps): ReactElement {
+export function PluginsTab({ t, openOfficialPage, resolveText }: PluginsTabProps): ReactElement {
   const [data, setData] = useState<PluginsListResponse | null>(null)
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
@@ -532,8 +532,6 @@ export function PluginsTab({ t, openMarket, openOfficialPage, resolveText }: Plu
             {t('pluginCheckUpdates')}
           </Button>
         )}
-        {/* 文字按钮而不是图标：右上角重启控件已经占了一个旋转图标，两个图标并排会认错。 */}
-        <Button variant="ghost" size="sm" disabled={busy} onClick={() => setReload(value => value + 1)}>{t('refresh')}</Button>
         {/* 官方插件（随 DSH 提供 / 市场装的）在本页既不能更也不能在这里管：给一条直达官方插件页的路。 */}
         {openOfficialPage !== undefined && (
           <Button variant="ghost" size="sm" title={t('pluginOfficialHint')} onClick={() => openOfficialPage()}>
@@ -616,7 +614,6 @@ export function PluginsTab({ t, openMarket, openOfficialPage, resolveText }: Plu
         t={t}
         open={installOpen}
         onClose={() => setInstallOpen(false)}
-        openMarket={openMarket}
         onInstalled={() => setReload(value => value + 1)}
       />
 

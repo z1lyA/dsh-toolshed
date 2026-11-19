@@ -120,7 +120,8 @@ the **top-right corner of the tab row** holds refresh + restart:
 
 - **Skills** (list with a **source-category filter** — project / user / runtime / bundled — plus search, enable/disable,
   view/edit SKILL.md, create — opens a new conversation in the
-  current workspace with `/skill-creator` prefilled — delete, open folder, refresh),
+  current workspace with `/skill-creator` prefilled — delete, open folder (the top of the tab opens **`~/.agents/skills`**,
+  the DSH-native user skills root), refresh),
 - **Plugins** (**packages only (npm bundles)**, and only the third-party ones you installed in this profile: icon + name +
   one-line description + version + state; search (package name, title, description), **package-level
   enable/disable**, **uninstall** (only for bundles the official service marks removable, with confirmation), **update

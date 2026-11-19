@@ -33,12 +33,6 @@ export interface PluginInstallDialogProps {
   onClose: () => void
   /** 装成功一次就通知父组件重拉包列表（不自动关弹窗：用户要先看到结果）。 */
   onInstalled?: () => void
-  /**
-   * 「打开官方插件市场」——浏览/搜索仍归官方「发现」页。
-   *
-   * 三级降级全拿不到时父组件传 `undefined`，这一行按钮就不渲染（不做一个点了没反应的按钮）。
-   */
-  openMarket?: () => void
 }
 
 /**

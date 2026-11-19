@@ -261,7 +261,7 @@ export function PluginInstallResult(props: PluginInstallResultProps): ReactEleme
  * 复刻必然跟着索引格式漂移。这里只提供一条确定的路径：知道包名的人输入包名就能装；
  * 浏览/搜索点底部的「打开官方插件市场」。
  */
-export function PluginInstallDialog({ t, open, onClose, onInstalled, openMarket }: PluginInstallDialogProps): ReactElement {
+export function PluginInstallDialog({ t, open, onClose, onInstalled }: PluginInstallDialogProps): ReactElement {
   const [spec, setSpec] = useState('')
   const [phase, setPhase] = useState<PluginInstallPhase>('idle')
   const [inspect, setInspect] = useState<PluginInspectAccepted | null>(null)
@@ -411,12 +411,6 @@ export function PluginInstallDialog({ t, open, onClose, onInstalled, openMarket 
               {t('pluginInstallDo')}
             </Button>
           </div>
-
-          {openMarket !== undefined && (
-            <div className="dshp-extension__card-row">
-              <Button variant="ghost" size="sm" title={t('pluginMarketHint')} onClick={openMarket}>{t('pluginInstallMarket')}</Button>
-            </div>
-          )}
         </div>
       )}
     </Modal>

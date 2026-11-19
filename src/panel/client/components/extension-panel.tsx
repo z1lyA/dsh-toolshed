@@ -12,19 +12,6 @@ import { SkillsTab } from './skills-tab'
 
 export interface ExtensionPanelProps {
   createSkill: () => Promise<void>
-  /**
-   * 「插件市场」入口（见 register/extension-panel.tsx 的三级降级）。
-   *
-   * 组件本身不碰 ctx：SSR 冒烟里没有上下文。`undefined` 表示连官方插件页都打不开，
-   * 此时按钮不渲染（渲染一个点了没反应的市场按钮比没有更糟）。
-   */
-  openMarket?: () => void
-  /**
-   * 「官方插件页」入口：本页只管第三方包，官方包的启停 / 卸载 / 换版本去官方页做。
-   *
-   * 与 `openMarket` 是**两条**入口：市场落在官方页的「发现」，官方插件页落在「已安装」。
-   * 同样拿不到就不渲染按钮。
-   */
   openOfficialPage?: () => void
   /**
    * 本地化文案解析器（`ctx.locale.resolveText`）。
@@ -40,14 +27,14 @@ interface ExtensionTab {
   render: () => ReactElement
 }
 
-export function ExtensionPanel({ createSkill, openMarket, openOfficialPage, resolveText }: ExtensionPanelProps): ReactElement {
+export function ExtensionPanel({ createSkill, openOfficialPage, resolveText }: ExtensionPanelProps): ReactElement {
   const t = locale.text
   const tabsId = useId()
   const rows: ExtensionTab[] = [
     // 顺序是用户明确要求的「技能 / 插件 / 会话 / MCP」：这是 AGENTS「新 tab 追加在末尾」
     // 那条例外的唯一来源——`rows[0]` 仍是技能（默认页不变），插件从末尾挪到第二位。
     { id: 'skills', label: t('skillsTab'), render: () => <SkillsTab t={t} createSkill={createSkill} /> },
-    { id: 'plugins', label: t('pluginsTab'), render: () => <PluginsTab t={t} openMarket={openMarket} openOfficialPage={openOfficialPage} resolveText={resolveText} /> },
+    { id: 'plugins', label: t('pluginsTab'), render: () => <PluginsTab t={t} openOfficialPage={openOfficialPage} resolveText={resolveText} /> },
     { id: 'archive', label: t('archiveTab'), render: () => <ArchiveTab t={t} /> },
     { id: 'mcp', label: t('mcpTab'), render: () => <McpTab t={t} /> },
   ]

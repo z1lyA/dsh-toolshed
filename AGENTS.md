@@ -141,8 +141,14 @@ host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.
 - **「插件」tab 只讲第三方包**（2.9.0 定稿）：官方包**不在这里列**，也**不要**把「全部 / 第三方 / 官方」三档筛选加回来
   ——官方包的开关在服务层之外就被产品挡住了（`bundleToggleReasonOf` 对 `official` 一律返回「去官方页管理」），
   更新又被官方 `updateRefusal` 拒绝（`official` 显式排除），列出来只是一排点不动的卡片。
-  官方插件（启停 / 卸载 / 换版本）走工具栏的**「官方插件页」**入口（`openOfficialPageOf`，落在官方页「已安装」），
-  与「安装插件」弹窗（`openMarketLauncherOf`，落在「发现」）是两条独立入口，别合并。
+  官方插件（启停 / 卸载 / 换版本）走工具栏的**「官方插件页」**入口（`openOfficialPageOf`，落在官方页「已安装」）。
+  **工具栏只留两个按钮**（2.9.1 用户定稿）：`检查更新` + `安装插件`；**别再加「刷新」**
+  （进页面自动加载、任何操作后自动重拉），也**别把官方页入口塞回安装弹窗**（那是重复入口）。
+  `openMarketLauncherOf`（点「发现」tab 那套 DOM 轮询）目前**没有接入**，保留但不要重新接回按钮；
+  真要复活「逛市场」入口时先问用户。
+- **「打开技能目录」跳的是 `~/.agents/skills`**（`AGENT_SKILLS_DIR`，2.9.1）：DSH 0.2.2 起原生扫这个目录，
+  用户和 skill-creator 建的技能都在那儿；`~/.dsh/skills`（`SKILLS_DATA_DIR`）只是本插件自己的数据目录，
+  「打开插件状态目录」（`plugin-state`）才用它。别把两者对调回来。
 - **「插件」tab 只讲包（bundle），不讲 Loader 条目**（2.3.0 定稿）：`listPlugins()` 列的条目在本机有 227 条
   （`dsh-base` 一个包就 87 条、`dsh-web-app` 96 条），那是实现细节、不是「我装了什么」；条目级的精细开关
   留给官方「插件」页。所以 `GET /api/plugins` 只返回 `{ bundles }`，`PluginBundleView` **没有** `rows`，
