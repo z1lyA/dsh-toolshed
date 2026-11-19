@@ -39,6 +39,13 @@ export interface ArchivedListTotals {
 /** GET /api/archived */
 export interface ArchiveListResponse {
   items: ArchivedSessionView[]
+  /**
+   * 已排队删除的会话 id（2.7.1 起删除一律排队）。
+   *
+   * 这些条目**不在** `items` 里：页面只用一个计数 + 一个「取消待删除」按钮表示它们，
+   * 而不是把每一行渲染成带「待删除」徽标的行——那样用户会以为「删了但还在」。
+   */
+  pendingIds: string[]
   totals: ArchivedListTotals
   defaults: { cleanupAttachments: boolean }
   generatedAt: string

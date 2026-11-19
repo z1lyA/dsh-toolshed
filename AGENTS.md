@@ -198,6 +198,13 @@ host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.
   DSH 0.2.2 起原生扫 `~/.agents/skills`，而 `.claude/skills/<name>` 通常是 junction 指回它，再挂一遍就是
   同一批目录扫两次——DSH 按 rank 去重（`custom 300` < `user-agents 500`）会让 custom 那份**赢走标签**，
   于是整组技能被标成「自定义」。`service/agents.ts` 现在只负责 MCP 配置的导入扫描。
+- **会话删除一律排队，绝不改成「当场删」**（`service/archive.ts`，2.7.1）：`DELETE /archive` 只往
+  `$DSH_HOME/session-admin/pending-deletions.json` 里登记，真正的删文件与归档记录清理都在启动 sweep
+  （`removeUnlocked` 的 `ignoreQueue` 路径）里做。原因：当场删必须顺手 `detachSession` / `unpinSession` /
+  `unarchiveSession`，而宿主内存里还记着这些会话——墓碑一清，原生侧栏就会把它们显示成「未分类」空壳
+  （用户实测过，2.7.0 之前就这样）。推到启动时，注册表从磁盘重建，两个页面都不会出现中间态。
+  `list()` 因此把排队项从 `items` 里剔除，只回 `pendingIds`（页面据此显示「N 条已排队 · 取消」）。
+  想立刻执行让用户点「重启服务」。**别为了「立刻释放磁盘」把这个 deferral 去掉。**
 - 会话管理的服务层（`service/archive.ts`、`session-paths.ts`、`session-attachments.ts`、`pending-deletions.ts`）
   是**纯 Node**、不依赖 DSH 服务（靠 `ctx.get` 取），因此可以脱离 DSH 直接单测；它们的线协议类型在
   `service/archive.types.ts`，由 `routes/index.types.ts` 再导出给客户端。队列与重启日志的目录**保持**

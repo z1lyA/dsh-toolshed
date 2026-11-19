@@ -60,11 +60,20 @@ function TriStateCheckbox({ checked, indeterminate, disabled, title, ariaLabel, 
  *  - 列表主层级是**工作区**：一行一个工作区、默认折叠，点开才看到该工作区的会话再逐条勾选；
  *  - 只有归档会话能被选中；取消归档会同时撤掉它的「待删除」意图；
  *  - 删除先走 dry-run 计划（`/archive/plan`），弹窗里分「立即删 / 排队 / 拒绝」三类；
- *  - live 会话不会被强删，只登记为「待删除」，下次启动 DSH 时执行；
- *  - 有排队条目时只提示「去服务页重启」，不在这一页再放一个重启按钮。
+ *  - **2.7.1 起删除一律排队**（`/archive/remove` 不再当场删）：排队项从列表里消失，只留一个计数与
+ *    「取消待删除」；下次启动 DSH 时执行，想立刻执行就点右上角「重启服务」。
+ *    这么做的原因：当场删要顺手清归档墓碑，而宿主内存里还记着这些会话，清掉墓碑后原生侧栏会把它们
+ *    渲染成「未分类」空壳；把删除与墓碑清理都推到启动时，两个页面都不会出现中间态。
  */
 export function ArchiveTab({ t }: ArchiveTabProps): ReactElement {
   const [rows, setRows] = useState<ArchivedSessionView[] | null>(null)
+  /**
+   * 已排队删除的会话 id（2.7.1 起删除一律排队）。
+   *
+   * 它们**不在** `rows` 里：宿主为了「删了就别再显示」把排队项从列表里去掉了，
+   * 这里只留计数与一个「取消待删除」入口。
+   */
+  const [pendingIds, setPendingIds] = useState<string[]>([])
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set())
   const [busy, setBusy] = useState(false)
   const [reload, setReload] = useState(0)
@@ -90,6 +99,7 @@ export function ArchiveTab({ t }: ArchiveTabProps): ReactElement {
         if (!current)
           return
         setRows(body.items)
+        setPendingIds(Array.isArray(body.pendingIds) ? body.pendingIds : [])
         setCleanupAttachments(body.defaults.cleanupAttachments)
       },
       (error: unknown) => {
@@ -112,10 +122,6 @@ export function ArchiveTab({ t }: ArchiveTabProps): ReactElement {
   const selectedIds = useMemo(() => selectable.filter(id => selected.has(id)), [selectable, selected])
   // 全局全选跨全部工作区（含折叠组里的会话）：数据源是整张 list，与展开状态无关。
   const allSelection = useMemo(() => selectionState(selectable, selected), [selectable, selected])
-  const pendingSelected = useMemo(
-    () => (rows ?? []).filter(row => selected.has(row.id) && row.pending !== undefined).map(row => row.id),
-    [rows, selected],
-  )
   const groups = useMemo(() => groupSessionsByWorkspace(rows ?? []), [rows])
 
   const toggleIds = (ids: readonly string[], next: boolean): void => {
@@ -147,7 +153,7 @@ export function ArchiveTab({ t }: ArchiveTabProps): ReactElement {
   }
 
   const totalBytes = (rows ?? []).reduce((sum, row) => sum + row.totalBytes, 0)
-  const pendingCount = (rows ?? []).filter(row => row.pending !== undefined).length
+  const pendingCount = pendingIds.length
 
   /** 会话行。分组只改层级，行内信息（占用/文件数/子代理数/待删除与失败标记）逐条照旧。 */
   const renderRow = (row: ArchivedSessionView): ReactElement => (
@@ -222,11 +228,11 @@ export function ArchiveTab({ t }: ArchiveTabProps): ReactElement {
   }
 
   const doCancelPending = async (): Promise<void> => {
-    if (pendingSelected.length === 0)
+    if (pendingIds.length === 0)
       return
     setBusy(true)
     try {
-      const body = await postArchivePendingCancel({ ids: pendingSelected })
+      const body = await postArchivePendingCancel({ ids: pendingIds })
       setOutcome({ ok: true, text: `${t('archivePendingCancelled')}: ${body.totals.cancelled}` })
     }
     catch (error) {
@@ -274,7 +280,8 @@ export function ArchiveTab({ t }: ArchiveTabProps): ReactElement {
       setSelected(new Set())
       setOutcome({
         ok: body.totals.failed === 0,
-        text: `${t('archiveDeleted')}: ${body.totals.deleted} · ${t('archiveQueued')}: ${body.totals.queued} · ${t('archiveFreed')}: ${formatBytes(body.totals.freedBytes)}`,
+        // 2.7.1 起删除一律排队：主句必须说「已排队」，否则用户会以为磁盘已经释放了。
+        text: `${t('archiveQueued')}: ${body.totals.queued} · ${t('archiveDeferred')}${body.totals.failed === 0 ? '' : ` · ${t('archiveFailures')}: ${body.totals.failed}`}`,
       })
       const lines: ArchiveFailureLine[] = []
       for (const result of body.results) {
@@ -346,7 +353,7 @@ export function ArchiveTab({ t }: ArchiveTabProps): ReactElement {
         </span>
         <span className="dshp-extension__count">{formatBytes(totalBytes)}</span>
         <span className="dshp-extension__spacer" />
-        <Button variant="ghost" size="sm" disabled={busy || pendingSelected.length === 0} onClick={() => void doCancelPending()}>
+        <Button variant="ghost" size="sm" disabled={busy || pendingIds.length === 0} onClick={() => void doCancelPending()}>
           {t('archiveCancelPending')}
         </Button>
         <Button variant="ghost" size="sm" disabled={busy || selectedIds.length === 0} onClick={() => void doUnarchive()}>
@@ -433,7 +440,10 @@ export function ArchiveTab({ t }: ArchiveTabProps): ReactElement {
       >
         <div className="dshp-extension__form">
           <ul className="dshp-extension__blockers">
-            <li>{t('archiveImmediate')}: {planImmediate.length} · {formatBytes(plan?.totals.immediateBytes ?? 0)}</li>
+            {/* 2.7.1 起全部排队，所以「立即」那行只在真有立即项时才出现（版面不浪费在一行 0 上）。 */}
+            {planImmediate.length > 0 && (
+              <li>{t('archiveImmediate')}: {planImmediate.length} · {formatBytes(plan?.totals.immediateBytes ?? 0)}</li>
+            )}
             <li>{t('archiveQueued')}: {planQueued.length} · {formatBytes(plan?.totals.queuedBytes ?? 0)}</li>
             {planRejected.length > 0 && (
               <li>

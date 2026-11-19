@@ -426,11 +426,17 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
     const queue = await readQueue().catch(() => [] as PendingEntry[])
     const pendingById = new Map(queue.map(entry => [entry.id, entry]))
     const inventory: ArchivedSessionView[] = []
+    // 已排队删除的不再列出来（2.7.1：删除一律排队，列表里只留「还没被删的」）。
+    const pendingIds: string[] = []
     for (const id of ids) {
+      // 排队项只回 id：页面用它显示「N 条已排队 · 取消」，但不再把每一行渲染成带「待删除」徽标的行。
+      if (pendingById.has(id)) {
+        pendingIds.push(id)
+        continue
+      }
       const descendants = descendantsOf(id, headers)
       const measured = await measureGroup([id, ...descendants])
       const workspace = ownership.get(id)
-      const pendingEntry = pendingById.get(id)
       inventory.push({
         id,
         title: await readSessionTitle(id),
@@ -444,16 +450,16 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
         duplicate: measured.duplicate,
         live: liveSession(id) !== undefined,
         descendants,
-        pending: pendingEntry === undefined ? undefined : pendingView(pendingEntry),
       })
     }
     return {
       items: inventory,
+      pendingIds,
       totals: {
         count: inventory.length,
         bytes: inventory.reduce((sum, item) => sum + item.totalBytes, 0),
         descendants: inventory.reduce((sum, item) => sum + item.descendants.length, 0),
-        pending: inventory.filter(item => item.pending !== undefined).length,
+        pending: pendingIds.length,
       },
       defaults: { cleanupAttachments: cleanupAttachmentsDefault },
       generatedAt: new Date().toISOString(),
@@ -486,7 +492,9 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
         descendants,
         live,
         pending: pendingEntry === undefined ? undefined : pendingView(pendingEntry),
-        willQueue: pendingEntry === undefined && (live || liveDescendant !== undefined),
+        // 2.7.1 起用户删除**一律排队**（见 `removeUnlocked` 的注释），所以计划里除了「已经在队列里」的，
+        // 其余都算「下次启动执行」——确认弹窗据此显示「排队」而不是「立即」。
+        willQueue: pendingEntry === undefined,
         liveDescendant,
         logBytes: measured.logBytes,
         cacheBytes: measured.cacheBytes,
@@ -554,6 +562,19 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
       }
       if (!ignoreQueue && queuedIds.has(id)) {
         results.push({ id, deleted: false, queued: true, alreadyQueued: true, freedBytes: 0, warnings: [] })
+        continue
+      }
+      // 2.7.1 起：**用户删除一律排队到下次启动**，不在请求里删文件。
+      //
+      // 为什么不再当场删：当场删要顺手做三件收尾（`detachSession` / `unpinSession` / `unarchiveSession`，
+      // 见下面的 `deletedIds` 分支）——而宿主内存里还记着这些会话，归档墓碑一清，侧栏就会把它们渲染成
+      // 「未分类」的空壳（用户实测过）。把「真正删除」与「墓碑/槽位清理」都推迟到启动时（`ignoreQueue`
+      // 那条 sweep 路径），那时注册表从磁盘重建，本页与原生侧栏都不会出现中间态。
+      // 想立刻执行就用右上角「重启服务」——那条路本来就有。
+      if (!ignoreQueue) {
+        queuedIds.add(id)
+        queueAdditions.push(id)
+        results.push({ id, deleted: false, queued: true, freedBytes: 0, warnings: [] })
         continue
       }
       if (liveSession(id) !== undefined) {

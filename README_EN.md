@@ -130,7 +130,9 @@ the **top-right corner of the tab row** holds refresh + restart:
 - **Sessions** (archived sessions **grouped by workspace** — groups collapsed by default, click a workspace to see its
   sessions; sessions without a workspace fall into a trailing "No workspace" group; each group header carries the name,
   session count, disk usage and pending count. **Select-all spans every group including collapsed ones**, and each group
-  has its own select-all / indeterminate state. Each row still shows the **session title + short id**, see below),
+  has its own select-all / indeterminate state. Each row still shows the **session title + short id**. Bulk delete runs a
+  dry-run plan → confirmation → **queues the removal for the next DSH start** (use "Restart service" to run it now);
+  queued sessions leave the list immediately and can be cancelled at any time),
 - **MCP** (list, add/edit, enable/disable, connection check, copy, import scanning, JSON export/import; a write shows
   a "restart needed" banner),
 - **restart control (top-right)**: a single **restart service**. It is **not disabled by running work** — only "not the
@@ -248,12 +250,18 @@ between machines); **rows inside a group keep the Host's order**.
 DSH can archive and unarchive but has **no delete API**. This tab adds it, with explicit rules:
 
 - Only registry-archived sessions are eligible; ids must match `^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$`.
-- **Sessions still live in memory are never force-deleted**: the host keeps an Agent handle once a conversation was
-  opened, and deleting the log under it makes the backend recreate a headerless log. Such sessions (and their
-  subagent descendants) are queued in `$DSH_HOME/session-admin/pending-deletions.json` and executed on the
-  **next DSH start**; the page shows "pending" and lets you cancel at any time.
+- **Deletion is always queued and runs on the next DSH start** (since 2.7.1): clicking delete only records the session
+  in `$DSH_HOME/session-admin/pending-deletions.json` — **nothing is removed right away**. Why: deleting now requires
+  clearing the archive tombstone (`unarchiveSession`), while the host still remembers the session in memory — once the
+  tombstone is gone the native sidebar renders it as a plain session without a workspace, i.e. an empty shell under
+  **Ungrouped** (observed on a real machine). Pushing both the removal and the tombstone/slot cleanup to start-up means
+  the registry is rebuilt from disk and neither surface ever shows that in-between state.
+  - Queued sessions **disappear from this page immediately**; only a "N queued · Cancel" line remains.
+  - To run them now, use **Restart service** in the top-right corner.
+  - Trade-off: disk space is released **at the next start/restart** (a deliberate choice).
 - Deletion covers the whole per-session log directory, the projection cache, schedules bound to the session, the
-  workspace slot and the archive tombstone.
+  workspace slot and the archive tombstone — all performed by the start-up sweep, which re-checks each entry (a session
+  that became live again stays queued).
 - **Attachments (on by default)** are removed only after a complete reference scan of every remaining session plus
   the upload index proves nothing else uses them; an incomplete scan removes **nothing** and reports why.
 - Unarchiving cancels the pending deletion immediately (workspace `domain/changed` listener + a sweep on every read).
