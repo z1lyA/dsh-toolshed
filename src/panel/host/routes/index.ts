@@ -20,6 +20,8 @@ import pluginBundleToggle from './plugins/bundle/toggle/post'
 import plugins from './plugins/get'
 import pluginInspect from './plugins/inspect/post'
 import pluginInstall from './plugins/install/post'
+import pluginUpdate from './plugins/update/post'
+import pluginUpdates from './plugins/updates/post'
 import rootsRemove from './roots/delete'
 import roots from './roots/get'
 import rootsAdd from './roots/post'
@@ -75,7 +77,12 @@ export const routes = defineRoutes<ExtensionRouteDeps>((disposer) => {
   // 安装插件：检查 + 安装两条独立路径（2.5.0）。**全部交给官方 `pluginManager`**：`inspect` 只读地
   // 问「这是什么、装了没」；`installBundle` 走官方那套 pnpm + package.json 写盘 + 回滚，
   // 我们既不自己跑 pnpm 也不自己写 package.json（两套写盘逻辑会打架）。
-  // 路径数 +2，共 22。
   disposer.post({ kind: 'exact', path: '/dsh-toolshed/api/plugins/inspect' }, pluginInspect)
   disposer.post({ kind: 'exact', path: '/dsh-toolshed/api/plugins/install' }, pluginInstall)
+
+  // 检查更新 / 执行更新（2.7.0）：`listVersions` 只读地问 registry「有没有更新的」，`updateBundle` 才动手
+  // （官方语义是先卸旧版再装新版，失败会回装旧版）。**串行检查**放在服务层，一条批量路径收全部包名。
+  // 路径数 +2，共 24。
+  disposer.post({ kind: 'exact', path: '/dsh-toolshed/api/plugins/updates' }, pluginUpdates)
+  disposer.post({ kind: 'exact', path: '/dsh-toolshed/api/plugins/update' }, pluginUpdate)
 })

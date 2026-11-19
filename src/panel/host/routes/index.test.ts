@@ -55,6 +55,8 @@ const EXPECTED_ROUTES: ReadonlyArray<readonly [string, string]> = [
   ['POST', `${P}/plugins/bundle/toggle`],
   ['POST', `${P}/plugins/inspect`],
   ['POST', `${P}/plugins/install`],
+  ['POST', `${P}/plugins/updates`],
+  ['POST', `${P}/plugins/update`],
 ]
 
 /** 同一路径的多个方法由 defineRoutes 收敛为一行注册。 */
@@ -96,10 +98,14 @@ function pluginManagerStub(): {
   bundleCalls: Array<{ name: string, enabled: boolean }>
   inspected: string[]
   installed: Array<{ spec: string, options?: { approvedBuilds?: string[], registry?: string } }>
+  versionChecks: string[]
+  updated: Array<{ name: string, version: string, options?: { registry?: string } }>
 } {
   const bundleCalls: Array<{ name: string, enabled: boolean }> = []
   const inspected: string[] = []
   const installed: Array<{ spec: string, options?: { approvedBuilds?: string[], registry?: string } }> = []
+  const versionChecks: string[] = []
+  const updated: Array<{ name: string, version: string, options?: { registry?: string } }> = []
   // 故意把官方包排在前面：排序在宿主做，响应里必须变成「第三方在前」。
   const bundles = [
     {
@@ -128,6 +134,8 @@ function pluginManagerStub(): {
     bundleCalls,
     inspected,
     installed,
+    versionChecks,
+    updated,
     pluginManager: {
       listBundles: async () => bundles,
       setBundleEnabled: async (name: string, enabled: boolean) => {
@@ -163,6 +171,22 @@ function pluginManagerStub(): {
           bundle: 'dsh-demo',
           version: '1.2.3',
           packageResult: { exitCode: 0, output: 'Progress: resolved 1', truncated: false, logPath: '/tmp/install.log' },
+        }
+      },
+      // 更新能力（2.7.0）：`dsh-offline` 模拟 registry 拒绝，其余回「有一个更新的版本」。
+      listVersions: async (name: string) => {
+        versionChecks.push(name)
+        return name === 'dsh-offline'
+          ? { status: 'refused', problem: 'network', reason: 'ETIMEDOUT', attempts: [] }
+          : { status: 'listed', installed: '1.0.0', registry: 'https://registry.npmjs.org/', attempts: [], omitted: 0, versions: [{ version: '1.1.0', bundle: true, tags: ['latest'], prerelease: false }] }
+      },
+      updateBundle: async (name: string, version: string, options?: { registry?: string }) => {
+        updated.push({ name, version, options })
+        return {
+          from: '1.0.0',
+          to: version,
+          step: 'install',
+          result: { changed: true, application: 'applied', stage: 'enable', target: name, version },
         }
       },
     },
@@ -393,6 +417,14 @@ describe('能力管理器路由声明', () => {
       ['POST', `${P}/plugins/install`, { spec: 'dsh-demo', approvedBuilds: [''] }, 'approvedBuilds must be an array of non-empty strings'],
       ['POST', `${P}/plugins/install`, { spec: 'dsh-demo', approvedBuilds: Array.from({ length: 65 }, () => 'x') }, 'approvedBuilds must be an array of non-empty strings'],
       ['POST', `${P}/plugins/install`, { spec: 'dsh-demo', registry: '' }, 'registry must be a non-empty string'],
+      ['POST', `${P}/plugins/updates`, {}, 'names must be a non-empty array of at most 64 package names'],
+      ['POST', `${P}/plugins/updates`, { names: [] }, 'names must be a non-empty array of at most 64 package names'],
+      ['POST', `${P}/plugins/updates`, { names: Array.from({ length: 65 }, () => 'x') }, 'names must be a non-empty array of at most 64 package names'],
+      ['POST', `${P}/plugins/updates`, { names: ['ok', ''] }, 'every name must be a non-empty string of at most 200 characters'],
+      ['POST', `${P}/plugins/update`, {}, 'name and version are required'],
+      ['POST', `${P}/plugins/update`, { name: 'dsh-context' }, 'name and version are required'],
+      ['POST', `${P}/plugins/update`, { name: 'dsh-context', version: '' }, 'name and version are required'],
+      ['POST', `${P}/plugins/update`, { name: 'dsh-context', version: '1.1.0', registry: '' }, 'registry must be a non-empty string when given'],
     ]
     for (const [method, path, body, error] of cases) {
       const response = await fetch(`${base}${path}`, {
@@ -643,6 +675,68 @@ describe('能力管理器路由声明', () => {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ spec: 'dsh-demo' }),
+      })
+      expect(response.status, path).toBe(503)
+      expect(await response.json(), path).toMatchObject({ code: 'plugin-manager-unavailable' })
+    }
+
+    dispose()
+  })
+
+  it('pOST /plugins/updates 串行查、去重，并透出「有更新 / 已是最新 / 查询失败」三种结论', async () => {
+    const { pluginManager, versionChecks } = pluginManagerStub()
+    const { base, dispose } = await start({ pluginManager })
+
+    const response = await fetch(`${base}${P}/plugins/updates`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ names: ['dsh-context', 'dsh-offline', 'dsh-context'] }),
+    })
+    expect(response.status).toBe(200)
+    const body = await response.json() as { checks: Array<{ name: string, status: string, latest?: { version: string }, problem?: string }> }
+    // 重复名字只查一次；顺序与入参一致
+    expect(versionChecks).toEqual(['dsh-context', 'dsh-offline'])
+    expect(body.checks.map(check => check.name)).toEqual(['dsh-context', 'dsh-offline'])
+    expect(body.checks[0]).toMatchObject({ status: 'listed', latest: { version: '1.1.0' } })
+    // 单个包连不上不影响另一个包（refused 是业务结论，照样 200）
+    expect(body.checks[1]).toMatchObject({ status: 'refused', problem: 'network' })
+
+    dispose()
+  })
+
+  it('pOST /plugins/update 透出 from/to 与结果，registry 原样交给官方', async () => {
+    const { pluginManager, updated } = pluginManagerStub()
+    const { base, dispose } = await start({ pluginManager })
+
+    const response = await fetch(`${base}${P}/plugins/update`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'dsh-context', version: '1.1.0', registry: 'https://registry.npmjs.org/' }),
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      from: '1.0.0',
+      to: '1.1.0',
+      step: 'install',
+      result: { ok: true, application: 'applied' },
+    })
+    expect(updated).toEqual([{ name: 'dsh-context', version: '1.1.0', options: { registry: 'https://registry.npmjs.org/' } }])
+
+    dispose()
+  })
+
+  it('pOST /plugins/updates 与 /plugins/update 在更新能力缺失时返回 503', async () => {
+    const { base, dispose } = await start()
+
+    for (const [path, body] of [
+      [`${P}/plugins/updates`, { names: ['dsh-context'] }],
+      [`${P}/plugins/update`, { name: 'dsh-context', version: '1.1.0' }],
+    ] as const) {
+      const response = await fetch(`${base}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
       })
       expect(response.status, path).toBe(503)
       expect(await response.json(), path).toMatchObject({ code: 'plugin-manager-unavailable' })

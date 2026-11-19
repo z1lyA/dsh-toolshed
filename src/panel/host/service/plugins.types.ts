@@ -47,6 +47,12 @@ export interface PluginBundleView {
   readOnlyReason?: string
   /** 包加载失败时的机器码（官方 `ManagementError.code`）。 */
   errorCode?: string
+  /**
+   * 这一包**怎么更新**（官方 `BundleInfo.update`）：`registry`（按 registry 版本号更新）/
+   * `git`（需要调用方给一个钉到 full commit 的 git spec）；缺省 = 根本不能更新
+   * （`link:` / 本地路径依赖就是这种，比如 `dsh-toolshed` 自己）。
+   */
+  update?: string
 }
 
 export interface PluginsListResponse {
@@ -166,3 +172,72 @@ export interface PluginToggleResponse {
  */
 export const PLUGIN_MANAGER_UNAVAILABLE = 'plugin-manager-unavailable'
 export const PLUGIN_SELF_MANAGEMENT = 'self-management'
+
+/** 批量检查更新的请求：只查这些包（客户端只传 `update === 'registry'` 的那些）。 */
+export interface PluginUpdateCheckBody {
+  names: string[]
+}
+
+/** 一个「比已装版本更新」的候选版本（官方 `PluginVersion` 的投影，只留展示需要的）。 */
+export interface PluginUpdateCandidateView {
+  version: string
+  /** registry 给的发布时间（ISO 8601）。 */
+  publishedAt?: string
+}
+
+/**
+ * 一个包的检查结果。
+ *
+ * `status: 'listed'` 是「问到了」；`latest` 缺失表示**确实没有可用更新**（不是失败）。
+ * `status: 'refused'` 才表示没问到（离线 / 不是可更新的包 / 非 registry 依赖），
+ * 原因在 `problem` / `reason` 里——页面据此区分「已是最新」和「检查失败」。
+ */
+export interface PluginUpdateCheckView {
+  name: string
+  /** `listed` | `refused`。 */
+  status: string
+  /** 当前装的版本（检查就是比它新）。 */
+  installed?: string
+  /** 官方口径挑出的最新可用版本；没有则这一包已是最新。 */
+  latest?: PluginUpdateCandidateView
+  /** 回答的 registry（更新时要把它传给 host，才会从同一个源装）。 */
+  registry?: string | null
+  /** 还有多少个更新的版本因为上限没列出来。 */
+  omitted?: number
+  /** `refused` 时的机器码：`not-updatable` | `not-found` | `network` | `unknown`。 */
+  problem?: string
+  /** `refused` 时的原话（registry / pnpm 说的）。 */
+  reason?: string
+}
+
+export interface PluginUpdateCheckResponse {
+  checks: PluginUpdateCheckView[]
+}
+
+/** 执行更新：必须带上检查时给出的版本与 registry（否则可能从另一个源装到别的版本）。 */
+export interface PluginUpdateBody {
+  name: string
+  version: string
+  /** 检查时回答的那个 registry；缺省由官方按它自己的顺序重试。 */
+  registry?: string
+}
+
+/**
+ * 更新结果：官方 `PluginUpdateResult` 的投影。
+ *
+ * 更新是**先卸旧版再装新版**：`result` 是最后执行的那一步的结果，`restore` 只在「新版装失败/被取消、
+ * 又把旧版装回去」时出现——页面必须如实说出这件事（用户会看到一个中间态失败但版本没变）。
+ */
+export interface PluginUpdateResponse {
+  /** 只有 `result.ok` 为真才算整体成功。 */
+  ok: boolean
+  /** 更新前 / 目标版本。 */
+  from?: string
+  to?: string
+  /** 最后执行的步骤：`check` | `remove` | `install`。 */
+  step?: string
+  /** 该步骤的结果（与安装共用同一套投影字段）。 */
+  result?: PluginInstallResponse
+  /** 失败后把旧版装回去的结果。 */
+  restore?: PluginInstallResponse
+}

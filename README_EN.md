@@ -123,9 +123,10 @@ the **top-right corner of the tab row** holds refresh + restart:
   current workspace with `/skill-creator` prefilled — delete, open folder, refresh),
 - **Plugins** (**packages only (npm bundles)**: icon + name + one-line description + version + state; `All / Third-party /
   Official` filter (third-party by default), search (package name, title, description), **package-level
-  enable/disable**, and **undo of the last change** when a toggle fails; the **Plugin market** button opens the official
-  Plugins page straight on its **Discover** tab. **No Loader entries** — fine-grained entry switches live on the
-  official Plugins page),
+  enable/disable**, **update check & one-click update** (checked once on entry, 10-minute cache, updatable packages
+  pinned to the top with a `0.6.4 → 0.6.5` badge; "Update to x.y.z" asks for confirmation first), and **undo of the
+  last change** when a toggle fails; the **Plugin market** button opens the official Plugins page straight on its
+  **Discover** tab. **No Loader entries** — fine-grained entry switches live on the official Plugins page),
 - **Sessions** (archived sessions **grouped by workspace** — groups collapsed by default, click a workspace to see its
   sessions; sessions without a workspace fall into a trailing "No workspace" group; each group header carries the name,
   session count, disk usage and pending count. **Select-all spans every group including collapsed ones**, and each group
@@ -196,6 +197,28 @@ The **Plugin market** button opens an **Install plugin** dialog (it does **not**
 > into the official page's `plugins.tab`), with no component and no `render()`; cloning it would drift along with the
 > market index and detail-document formats. And "install a package by name" does not need the index at all — it is a
 > thin shell over the official `installBundle`.
+
+#### Updates
+
+- **Checked once when you open the Plugins page** (`update === 'registry'` packages only, serial, never blocking the
+  list), cached for 10 minutes; **Check for updates** re-runs it on demand (a manual run reports failures, the automatic
+  one stays silent).
+- **Re-sorted once after the whole check settles**: updatable packages go to the top; everything else keeps the
+  third-party → official → name order.
+- Updatable cards show a `0.6.4 → 0.6.5` badge plus an **Update to 0.6.5** button; **every update asks for
+  confirmation** (current → target plus the answering registry), then shows progress and the result.
+- Candidates follow the official rule: `bundle`, compatible with the running dsh, **not deprecated and not a
+  prerelease** — a version that would not boot is never offered.
+- **An update removes the old version before installing the new one**: when the new one fails the official service puts
+  the old version back, and the page says so ("rolled back to x.y.z").
+- `link:` dependencies (such as `dsh-toolshed` itself) have no `update` field and never show an update entry;
+  `update === 'git'` packages need a spec pinned to a full commit, so this panel does not check them automatically and
+  only points at the official page.
+
+> Why not navigate to the official detail page on click: `pluginNavigation.openBundle()` **switches the main panel** —
+> the Toolshed page unmounts (filters and search lost) and coming back lands on the first tab (Skills), while the detail
+> page's own back button only returns to the official Installed list. So updating happens in-page; detail/uninstall/pick
+> a version stay behind the **Plugin market** button, which explicitly means "go to the official page".
 
 > **Known limitation (fragile)**: to funnel the entry points into this panel, `register/sidebar-tweaks.ts` hides the
 > sidebar's own **Plugins** row (the official build hard-codes it as always present, so it never gets lost) and hides

@@ -155,6 +155,52 @@ describe('插件页（纯包级视图）', () => {
   })
 })
 
+describe('插件更新入口（2.7.0）', () => {
+  it('有可用更新时卡片出现徽标与「更新到 x.y.z」按钮', () => {
+    const html = renderToStaticMarkup(
+      <PluginBundleCard
+        t={t}
+        bundle={{ ...thirdParty, update: 'registry' }}
+        busy={false}
+        update={{ from: thirdParty.version, to: '9.9.9' }}
+        onToggleBundle={noop}
+        onUpdate={noop}
+      />,
+    )
+    expect(html).toContain(t('pluginUpdateBadge', { from: thirdParty.version ?? '', to: '9.9.9' }))
+    expect(html).toContain(t('pluginUpdateTo', { version: '9.9.9' }))
+    expect(html).toContain('data-update="true"')
+    expect(html).not.toContain('undefined')
+  })
+
+  it('没有更新时卡片不出现更新按钮（link 依赖永远不该有）', () => {
+    const html = card(thirdParty)
+    expect(html).not.toContain(t('pluginUpdateTo', { version: '9.9.9' }))
+    expect(html).toContain('data-update="false"')
+  })
+
+  it('git 依赖只给一句「去官方页更新」，不出现可点的更新按钮', () => {
+    const html = card({ ...thirdParty, update: 'git' })
+    expect(html).toContain(t('pluginUpdateGitManual'))
+    expect(html).not.toContain(t('pluginUpdateTo', { version: '9.9.9' }))
+  })
+
+  it('正在更新时按钮变成「更新中…」', () => {
+    const html = renderToStaticMarkup(
+      <PluginBundleCard
+        t={t}
+        bundle={{ ...thirdParty, update: 'registry' }}
+        busy={false}
+        update={{ to: '9.9.9' }}
+        updating
+        onToggleBundle={noop}
+        onUpdate={noop}
+      />,
+    )
+    expect(html).toContain(t('pluginUpdating'))
+  })
+})
+
 describe('localizedTextOf', () => {
   it('prefers the injected runtime resolver over the raw shape', () => {
     const text = { en: 'Official', zh: '官方' }

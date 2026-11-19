@@ -51,6 +51,14 @@ export const TABLIST_SELECTOR = '[role="tablist"]'
 export const DISCOVER_TAB_POLL_INTERVAL_MS = 100
 export const DISCOVER_TAB_POLL_ATTEMPTS = 30
 
+/**
+ * 「检查更新」结果的内存缓存时长。
+ *
+ * 为什么不每次进页面都查：检查要串行问 registry，4 个包约 1–3 秒且依赖网络；进页面自动查一次
+ * 已经够新，10 分钟内切 tab / 重挂面板都复用同一份结果，用户想立刻确认可以点「检查更新」。
+ */
+export const PLUGIN_UPDATE_CHECK_TTL_MS = 10 * 60 * 1000
+
 export const SKILL_CREATOR_DRAFT = '/skill-creator '
 export const SKILL_REFRESH_INTERVAL_MS = 300
 export const SKILL_REFRESH_TIMEOUT_MS = 5_000

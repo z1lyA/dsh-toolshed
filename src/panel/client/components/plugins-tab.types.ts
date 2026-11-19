@@ -30,7 +30,17 @@ export interface PluginBundleCardProps {
   bundle: PluginBundleView
   resolveText?: ResolveLocalizedText
   busy: boolean
+  /**
+   * 有可用更新时的徽标数据（`0.6.4 → 0.6.5`）。
+   *
+   * `undefined` = 这一行**不渲染**更新入口：`link:` 本地依赖与 git 依赖都不该出现一个点了没用的按钮。
+   */
+  update?: { from?: string, to: string }
+  /** 这一行正在更新中（按钮变成「更新中…」，开关同时禁用）。 */
+  updating?: boolean
   onToggleBundle: (bundle: PluginBundleView) => void
+  /** 用户点了「更新到 x.y.z」：由页面弹确认，真正的执行也在页面里。 */
+  onUpdate?: (bundle: PluginBundleView, version: string) => void
 }
 
 /**

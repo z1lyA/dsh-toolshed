@@ -25,6 +25,12 @@ import type {
   PluginInstallResponse,
   PluginsListResponse,
   PluginToggleResponse,
+  PluginUpdateBody,
+  PluginUpdateCandidateView,
+  PluginUpdateCheckBody,
+  PluginUpdateCheckResponse,
+  PluginUpdateCheckView,
+  PluginUpdateResponse,
 } from './plugins.types'
 import { ArchiveRequestError } from './archive'
 import { PLUGIN_MANAGER_UNAVAILABLE, PLUGIN_SELF_MANAGEMENT } from './plugins.types'
@@ -51,6 +57,8 @@ export interface OfficialBundleInfo {
   description?: string
   readOnlyReason?: string
   error?: { code?: string }
+  /** `registry` | `git`；缺省 = 不能更新（`link:` 本地依赖就是这种）。 */
+  update?: string
 }
 
 export interface OfficialChangeResult {
@@ -108,6 +116,50 @@ export interface OfficialSpecInspection {
 export interface OfficialInstallBundleOptions {
   approvedBuilds?: string[]
   registry?: string | null
+}
+
+/** 官方 `PluginVersion` 的最小镜像：只读「能不能装」与展示需要的字段。 */
+export interface OfficialPluginVersion {
+  version?: string
+  publishedAt?: string
+  /** 预发布版（官方口径里要排除）。 */
+  prerelease?: boolean
+  /** 弃用说明（有值就要排除）。 */
+  deprecated?: string
+  /** 这个版本是否声明了 `dsh.bundle`；false 的不可能替换一个 bundle。 */
+  bundle?: boolean
+  /** 与当前 dsh 版本不兼容时的详情（有值就要排除）。 */
+  incompatible?: unknown
+}
+
+/** 官方 `PluginVersionList` 的最小镜像（`status` 判别）。 */
+export interface OfficialPluginVersionList {
+  status?: string
+  installed?: string
+  registry?: string | null
+  versions?: OfficialPluginVersion[]
+  omitted?: number
+  problem?: string
+  reason?: string
+}
+
+/** 官方 `PluginUpdateResult` 的最小镜像；`result` / `restore` 是 `ChangeResult`（走 `toInstallResponse`）。 */
+export interface OfficialPluginUpdateResult {
+  from?: string
+  to?: string
+  step?: string
+  result?: unknown
+  restore?: unknown
+}
+
+/**
+ * 更新能力（官方 `listVersions` / `updateBundle`）的鸭子类型。
+ *
+ * 与「启停」「安装」各自独立判：老宿主可能只有其中一部分能力，缺哪个就只让那一个入口降级。
+ */
+export interface PluginUpdaterService {
+  listVersions: (name: string, options?: { registry?: string | null }) => Promise<unknown>
+  updateBundle: (name: string, version: string, options?: { registry?: string | null }) => Promise<unknown>
 }
 
 /**
@@ -231,6 +283,22 @@ export function resolvePluginInstaller(ctx: HostServiceHub): PluginInstallerServ
 }
 
 /**
+ * 惰性解析同一个 `pluginManager` 的**更新**能力。
+ *
+ * 与启停 / 安装一样是独立契约：缺 `listVersions` 或 `updateBundle` 就只让「检查更新 / 更新」降级，
+ * 不影响列表与启停（0.2.2 之前根本没有这两个方法）。
+ */
+export function resolvePluginUpdater(ctx: HostServiceHub): PluginUpdaterService | undefined {
+  const candidate = readService(ctx, 'pluginManager')
+  if (candidate === null || typeof candidate !== 'object')
+    return undefined
+  const updater = candidate as PluginUpdaterService
+  return typeof updater.listVersions === 'function'
+    && typeof updater.updateBundle === 'function'
+    ? updater
+    : undefined
+}
+/**
  * `LocalizedText` 原样透传，只挡非字符串值。
  *
  * **不**在宿主端解析语言：`ctx.locale.resolveText()` 在客户端，且用户切换语言时宿主缓存的那份就过期了。
@@ -287,6 +355,10 @@ function projectBundle(item: unknown): PluginBundleView | undefined {
     view.readOnlyReason = bundle.readOnlyReason
   if (typeof bundle.error?.code === 'string')
     view.errorCode = bundle.error.code
+  // 怎么更新是官方给的判据（`registry` / `git`），缺省 = 不能更新（`link:` 本地依赖）。
+  // 页面据此决定要不要显示「更新」入口——**别自己按有没有版本号去猜**。
+  if (typeof bundle.update === 'string')
+    view.update = bundle.update
   return view
 }
 
@@ -486,6 +558,125 @@ export function toInstallResponse(raw: unknown): PluginInstallResponse {
   return response
 }
 
+/** 官方口径的「该更新到哪个版本」：最新、声明了 bundle、非弃用、非预发布、兼容当前 dsh。 */
+export function updateCandidateOf(versions: unknown): PluginUpdateCandidateView | undefined {
+  if (!Array.isArray(versions))
+    return undefined
+  for (const item of versions) {
+    if (!isRecord(item))
+      continue
+    const version = item.version
+    if (typeof version !== 'string' || version === '')
+      continue
+    // 官方 `updateCandidate` 的四条排除，少一条都可能推一个装上去起不来的版本（预发布 / 弃用 / 不兼容）。
+    if (item.bundle !== true)
+      continue
+    if (item.incompatible !== undefined && item.incompatible !== null)
+      continue
+    if (typeof item.deprecated === 'string' && item.deprecated !== '')
+      continue
+    if (item.prerelease === true)
+      continue
+    const candidate: PluginUpdateCandidateView = { version }
+    if (typeof item.publishedAt === 'string')
+      candidate.publishedAt = item.publishedAt
+    return candidate
+  }
+  return undefined
+}
+
+/** 官方 `listVersions()` → 线协议（`status` 判别；`refused` 的原因原样带回）。 */
+export function toUpdateCheckView(name: string, raw: unknown): PluginUpdateCheckView {
+  const list = isRecord(raw) ? (raw as unknown as OfficialPluginVersionList) : undefined
+  const status = typeof list?.status === 'string' ? list.status : 'refused'
+  if (status !== 'listed') {
+    const refused: PluginUpdateCheckView = {
+      name,
+      status: 'refused',
+      problem: typeof list?.problem === 'string' ? list.problem : 'unknown',
+    }
+    if (typeof list?.reason === 'string')
+      refused.reason = list.reason
+    return refused
+  }
+  const view: PluginUpdateCheckView = { name, status: 'listed' }
+  if (typeof list?.installed === 'string')
+    view.installed = list.installed
+  if (typeof list?.registry === 'string')
+    view.registry = list.registry
+  else if (list?.registry === null)
+    view.registry = null
+  if (typeof list?.omitted === 'number' && list.omitted > 0)
+    view.omitted = list.omitted
+  const latest = updateCandidateOf(list?.versions)
+  if (latest !== undefined)
+    view.latest = latest
+  return view
+}
+
+/**
+ * 批量检查更新：**串行**问 registry。
+ *
+ * 为什么串行：官方客户端也是串行（`manager-store` 的 `checkAllVersions`），一次并发 N 个 registry 请求
+ * 既慢又更容易被限流；而且这里单个包失败只记 `refused`，不能中断整批。
+ */
+export async function checkUpdates(
+  updater: PluginUpdaterService,
+  names: readonly string[],
+): Promise<PluginUpdateCheckResponse> {
+  const checks: PluginUpdateCheckView[] = []
+  const seen = new Set<string>()
+  for (const name of names) {
+    if (seen.has(name))
+      continue
+    seen.add(name)
+    try {
+      checks.push(toUpdateCheckView(name, await updater.listVersions(name, {})))
+    }
+    catch (error) {
+      // 单个包抛异常不该让「另外几个包」的结论一起消失。
+      checks.push({
+        name,
+        status: 'refused',
+        problem: 'unknown',
+        reason: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+  return { checks }
+}
+
+/**
+ * 执行更新：官方 `updateBundle(name, version, { registry })` → 线协议。
+ *
+ * `restore` 出现意味着「新版失败、旧版已被装回」——页面必须说出来，否则用户会以为版本变了。
+ */
+export async function updateBundled(
+  updater: PluginUpdaterService,
+  body: PluginUpdateBody,
+): Promise<PluginUpdateResponse> {
+  const options = typeof body.registry === 'string' && body.registry !== ''
+    ? { registry: body.registry }
+    : undefined
+  const raw = await updater.updateBundle(body.name, body.version, options)
+  const result = isRecord(raw) ? (raw as unknown as OfficialPluginUpdateResult) : undefined
+  const response: PluginUpdateResponse = { ok: false }
+  if (typeof result?.from === 'string')
+    response.from = result.from
+  if (typeof result?.to === 'string')
+    response.to = result.to
+  if (typeof result?.step === 'string')
+    response.step = result.step
+  if (result?.result !== undefined) {
+    const projected = toInstallResponse(result.result)
+    response.result = projected
+    response.ok = projected.ok
+  }
+  if (result?.restore !== undefined)
+    response.restore = toInstallResponse(result.restore)
+  return response
+}
+
 export interface PluginsAdmin {
   /** 包级主视图（已排序）。 */
   list: () => Promise<PluginsListResponse>
@@ -494,6 +685,10 @@ export interface PluginsAdmin {
   inspect: (body: PluginInspectBody) => Promise<PluginInspectResponse>
   /** 安装：需要批准构建脚本时会回 `pendingBuilds` 且这一轮什么都没装。 */
   install: (body: PluginInstallBody) => Promise<PluginInstallResponse>
+  /** 批量检查更新（串行问 registry，只查不改）。 */
+  checkUpdates: (body: PluginUpdateCheckBody) => Promise<PluginUpdateCheckResponse>
+  /** 执行更新：先卸旧版再装新版，失败时官方会把旧版装回去。 */
+  update: (body: PluginUpdateBody) => Promise<PluginUpdateResponse>
 }
 
 /**
@@ -540,6 +735,16 @@ export function createPluginsAdmin(ctx: HostServiceHub): PluginsAdmin {
     }
     return installer
   }
+  const updaterOrThrow = (): PluginUpdaterService => {
+    const updater = resolvePluginUpdater(ctx)
+    if (updater === undefined) {
+      throw new PluginRequestError(
+        PLUGIN_MANAGER_UNAVAILABLE,
+        'the pluginManager service in this dsh build cannot check for or apply updates',
+      )
+    }
+    return updater
+  }
   return {
     list: async () => ({ bundles: await listPluginBundles(managerOrThrow()) }),
     toggleBundle: async body => toggleBundle(managerOrThrow(), body.name, body.enabled),
@@ -547,5 +752,7 @@ export function createPluginsAdmin(ctx: HostServiceHub): PluginsAdmin {
     install: async body => toInstallResponse(
       await installerOrThrow().installBundle(body.spec, installOptionsOf(body)),
     ),
+    checkUpdates: async body => checkUpdates(updaterOrThrow(), body.names),
+    update: async body => updateBundled(updaterOrThrow(), body),
   }
 }

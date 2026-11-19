@@ -175,3 +175,14 @@ export function postPluginInspect(body: Types.PluginInspectBody, options?: Fetch
 export function postPluginInstall(body: Types.PluginInstallBody, options?: FetchOptions) {
   return ofetch<Types.PluginInstallResponse>("/plugins/install", { baseURL, method: "post", body, ...jsonError, ...options });
 }
+
+/** @method post */
+export function postPluginUpdateCheck(body: Types.PluginUpdateCheckBody, options?: FetchOptions) {
+  return ofetch<Types.PluginUpdateCheckResponse>("/plugins/updates", { baseURL, method: "post", body, ...jsonError, ...options });
+}
+
+// 更新会真的卸旧版再装新版——失败原因（网络 / 权限 / 脚本未批准）必须能透出，所以同样带 `...jsonError`。
+/** @method post */
+export function postPluginUpdate(body: Types.PluginUpdateBody, options?: FetchOptions) {
+  return ofetch<Types.PluginUpdateResponse>("/plugins/update", { baseURL, method: "post", body, ...jsonError, ...options });
+}

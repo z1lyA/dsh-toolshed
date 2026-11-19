@@ -57,6 +57,12 @@ export type {
   PluginInspectResponse,
   PluginsListResponse,
   PluginToggleResponse,
+  PluginUpdateBody,
+  PluginUpdateCandidateView,
+  PluginUpdateCheckBody,
+  PluginUpdateCheckResponse,
+  PluginUpdateCheckView,
+  PluginUpdateResponse,
 } from '../service/plugins.types'
 
 export interface ActionResult {

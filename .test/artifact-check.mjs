@@ -68,6 +68,12 @@ const present = [
   // 2.6.2：技能来源按类别合并展示（两个用户目录 → 同类，不再出现两个同名标签）
   [client, 'sourceProject'],
   [client, 'sourceUser'],
+  // 2.7.0：插件检查更新 / 一键更新（不跳官方页）
+  [client, 'pluginCheckUpdates'],
+  [client, '/plugins/updates'],
+  [client, '/plugins/update'],
+  [host, '/dsh-toolshed/api/plugins/updates'],
+  [host, '/dsh-toolshed/api/plugins/update'],
   // 侧栏「插件」「更多」两行的 DOM 兜底：标记属性与语义锚点都必须在产物里
   [client, 'data-toolshed-hidden'],
   [client, 'aria-haspopup'],

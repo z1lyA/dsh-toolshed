@@ -137,7 +137,7 @@ pnpm install --dir ~/.dsh/profiles/<profile>
 | Tab | 能力 |
 | --- | --- |
 | **技能** | 技能列表、**按来源类别筛选**（项目 / 用户 / 运行时 / 内置）、搜索、启用 / 停用、查看与编辑 SKILL.md、新建技能（在当前工作区开一条新对话并预填 `/skill-creator`）、删除、打开目录、刷新。来源按类别合并展示：`~/.dsh/skills` 与 `~/.agents/skills` 都算「用户」 |
-| **插件** | **只按包（npm bundle）**列出当前 profile 的插件：图标 + 名称 + 一句话简介 + 版本 + 启停状态；`全部 / 第三方 / 官方` 三档筛选（默认第三方）、搜索（包名 / 标题 / 简介）、**包级启用 / 停用**、失败后**撤销上次变更**；右上角「插件市场」直接跳到官方插件页的**发现** tab。**不展示 Loader 条目**——条目级的精细开关在官方插件页 |
+| **插件** | **只按包（npm bundle）**列出当前 profile 的插件：图标 + 名称 + 一句话简介 + 版本 + 启停状态；`全部 / 第三方 / 官方` 三档筛选（默认第三方）、搜索（包名 / 标题 / 简介）、**包级启用 / 停用**、**检查更新与一键更新**（进页面自动查一次、10 分钟缓存、有更新的置顶并标 `可更新 x → y`，点「更新到 x.y.z」逐个确认后执行）、失败后**撤销上次变更**；右上角「插件市场」直接跳到官方插件页的**发现** tab。**不展示 Loader 条目**——条目级的精细开关在官方插件页 |
 | **会话** | 已归档会话**按工作区分组**（组默认折叠，点开才见该工作区的会话；无工作区的归「未关联工作区」并置底）；组头 = 工作区名 + 会话数 + 该组占用 + 待删除数；**全局全选跨所有组（含折叠的）**，每组另有组内全选 / 半选。会话行仍显示**会话名 + 短 id**、精确磁盘占用、文件数、子代理数；批量**取消归档**、批量**永久删除**（dry-run 计划 → 确认 → 执行）、**待删除**队列与取消 |
 | **MCP** | 服务器列表（项目级 / 全局、启用状态、传输方式、URL / 命令）、新增与编辑表单、启用 / 停用、连接检查、复制片段、从其他 DSH profile 或 Claude / Cursor / Windsurf / VS Code 配置**导入扫描**、JSON 导出导入；写入后提示「需要重启」 |
 | **右上角重启控件** | 只有一个「重启服务」（进程级）。**不因为有会话在跑而禁用**：只有「不是桌面应用」或「正在重启」才禁用；点它时现读一次活跃工作，`title` 与确认弹窗会列出重启会中断什么（运行中的会话 / 排队输入 / 后台任务各几个） |
@@ -196,6 +196,22 @@ pnpm install --dir ~/.dsh/profiles/<profile>
 > 为什么不把官方「发现」页搬进来：市场客户端只导出 `apply`（把它的 `DiscoverSection` 注册到官方页的
 > `plugins.tab`），既没有组件也没有 `render()`；复刻一遍会跟着市场索引与详情文档的格式一起漂移。
 > 而「输入包名直接装」这件事**根本不需要市场索引**——它只是官方 `installBundle` 的一层壳。
+
+#### 更新
+
+- **进入「插件」页时自动查一次**（只查 `update === 'registry'` 的包，串行、不阻塞列表渲染），
+  结果缓存 10 分钟；顶部有「检查更新」可手动重查（手动重查失败会把原因说出来，自动查失败保持静默）。
+- **检查全部完成后一次性重排**：有可用更新的包置顶，其余保持「第三方 → 官方 → 包名」的顺序。
+- 有更新的卡片显示 `可更新 0.6.4 → 0.6.5` 徽标和「更新到 0.6.5」按钮；**每次更新都要确认**
+  （弹窗里给当前版本 → 目标版本 + 来源 registry），执行中显示进度，结束显示结果。
+- 版本候选按官方口径挑：`bundle` 为真、兼容当前 dsh、**不是弃用版、不是预发布版**——不会把装上去就起不来的版本推给你。
+- **更新是「先卸旧版再装新版」**：新版装失败时官方会把旧版装回去，页面会明说「已回滚到 x.y.z」，别以为版本变了。
+- `link:` 本地依赖（比如 `dsh-toolshed` 自己）**没有** `update` 字段，永远不显示更新入口；
+  `update === 'git'` 的包需要钉到 full commit 的 spec，面板不自动查，只提示去官方插件页。
+
+> 为什么不点卡片跳官方详情页：官方 `pluginNavigation.openBundle()` 会**切换主面板**——工具管理页被卸载、
+> 页内筛选与搜索丢失，回来后还会落在首屏「技能」tab；而详情页自己的「返回」只回到官方「已安装」列表。
+> 所以更新做在页内，详情/卸载/指定版本仍走「插件市场」按钮（那是明确的"去官方页"语义）。
 
 > **已知限制（易碎）**：为了把入口收敛到本面板，`register/sidebar-tweaks.ts` 会隐藏侧栏自带的
 > 「插件」行（官方把它写死常驻，不会丢），并**在安全时**隐藏「更多」。官方 `ctx.slots` 没有「隐藏/条件注册」
@@ -260,10 +276,10 @@ Web / CLI 会如实显示「不可用」——那种形态下杀了自己没人�
 | 方法 | 路径 |
 | --- | --- |
 | GET | `/dsh-toolshed/api/skills`、`/api/mcp`、`/api/skill?name=`、`/api/roots`、`/api/import/scan`、`/api/archived`、`/api/plugins`、`/api/host/restart` |
-| POST | `/api/mcp`、`/api/mcp/toggle`、`/api/mcp/check`、`/api/mcp/copy`、`/api/skills/refresh`、`/api/skill`、`/api/skill/policy`、`/api/import/apply`、`/api/roots`、`/api/open/dir`、`/api/plugins/bundle/toggle`、`/api/plugins/inspect`、`/api/plugins/install`、`/api/host/restart`、`/api/archive/plan`、`/api/archive/unarchive`、`/api/archive/pending/cancel` |
+| POST | `/api/mcp`、`/api/mcp/toggle`、`/api/mcp/check`、`/api/mcp/copy`、`/api/skills/refresh`、`/api/skill`、`/api/skill/policy`、`/api/import/apply`、`/api/roots`、`/api/open/dir`、`/api/plugins/bundle/toggle`、`/api/plugins/inspect`、`/api/plugins/install`、`/api/plugins/updates`、`/api/plugins/update`、`/api/host/restart`、`/api/archive/plan`、`/api/archive/unarchive`、`/api/archive/pending/cancel` |
 | DELETE | `/api/mcp`、`/api/skill`、`/api/roots`、`/api/archive` |
 
-`defineRoutes` 按 `(kind, path)` 收敛，同一路径的多个方法只占一行 `webServer.register`：2.5.0 起共 **22** 行。
+`defineRoutes` 按 `(kind, path)` 收敛，同一路径的多个方法只占一行 `webServer.register`：2.7.0 起共 **24** 行。
 错误体统一是 `{ error, code }`（重启被挡住时多一个 `blockers` 数组），面板靠 `code` 分支。
 `/api/plugins` 在缺少官方 `pluginManager` 服务时回 503 `plugin-manager-unavailable`；
 `/api/plugins/bundle/toggle` 在「停用 dsh-toolshed 自己」时回 409 `self-management`，
@@ -272,6 +288,8 @@ Web / CLI 会如实显示「不可用」——那种形态下杀了自己没人�
 （2.3.0 删掉了行级路由 `/api/plugins/toggle`）。
 `/api/plugins/inspect` 只做识别（不改任何文件），`/api/plugins/install` 才会真的跑 pnpm；
 后者把官方 `ChangeResult` 里与装包有关的部分投影出来（含 `pendingBuilds` 与 pnpm 输出尾部）。
+`/api/plugins/updates` 批量检查（串行问 registry，单个失败只记 `refused` 不中断），`/api/plugins/update`
+执行更新并把官方的 `PluginUpdateResult` 投影出来——`restore` 字段出现即表示「新版失败、旧版已装回」。
 
 ## 🛠 开发
 

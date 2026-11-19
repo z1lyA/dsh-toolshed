@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import type { LocalizedTextView, PluginBundleView, PluginsListResponse, PluginToggleResponse } from '../apis/index.type'
+import type { LocalizedTextView, PluginBundleView, PluginsListResponse, PluginToggleResponse, PluginUpdateCheckView, PluginUpdateResponse } from '../apis/index.type'
 import type { Translate } from '../locales/index.types'
 import type {
   PluginBundleCardProps,
@@ -8,11 +8,21 @@ import type {
   PluginUndoRecord,
   ResolveLocalizedText,
 } from './plugins-tab.types'
-import { Button, Icon, Input, Puzzle, SegmentedControl, StateDot, Switch, Tag } from 'dsh-tauri-ui/client'
+import { Button, Icon, Input, Modal, Puzzle, SegmentedControl, StateDot, Switch, Tag } from 'dsh-tauri-ui/client'
 import { useEffect, useMemo, useState } from 'react'
-import { ApiError, getPlugins, postPluginBundleToggle } from '../apis'
+import { ApiError, getPlugins, postPluginBundleToggle, postPluginUpdate, postPluginUpdateCheck } from '../apis'
+import { PLUGIN_UPDATE_CHECK_TTL_MS } from '../constants'
 import { useTimers } from '../hooks/use-timers'
 import { PluginInstallDialog } from './plugins-install-dialog'
+import { isCheckStale, registryUpdatableOf, sortBundlesByUpdate, updateBadgeOf, updatedCountOf } from './plugins-tab.update'
+
+/**
+ * 「检查更新」结果的内存缓存：**模块级**，跨组件重挂（切 tab、面板重进）都复用。
+ *
+ * 为什么不是组件 state：检查要串行问 registry（4 个包约 1–3 秒），每次重挂都重查既慢又吵；
+ * 放模块级 + 10 分钟 TTL 才是「进页面自动查一次」的正确语义。用户想立刻确认就点「检查更新」。
+ */
+const updateCheckCache = new Map<string, { at: number, check: PluginUpdateCheckView }>()
 
 /**
  * 本地化文案的兜底解析。
@@ -131,12 +141,29 @@ function failureTextOf(t: Translate, cause: unknown): string {
 }
 
 /**
- * 一个 npm 包（bundle）的卡片：图标 + 标题 + 一句话简介 + 版本 + 状态 + 包级开关。
+ * 更新结果 → banner 文案。
+ *
+ * `ok` 只看最后一个执行步骤的结果；**`restore` 出现必须单独说一句**：那表示新版装失败、官方已经把
+ * 旧版装回去了——不说明的话用户会以为「失败了但也许升上去了」。
+ */
+function updateOutcomeText(t: Translate, body: PluginUpdateResponse): string {
+  if (body.ok)
+    return t('pluginUpdateDone', { version: body.to ?? '' })
+  const result = body.result
+  const detail = [result?.errorCode ?? result?.failureKind ?? result?.application, result?.diagnostic]
+    .filter(part => part !== undefined && part !== '')
+    .join(' — ')
+  const base = `${t('pluginUpdateFailed')}${detail === '' ? '' : ` (${detail})`}`
+  return body.restore === undefined ? base : `${base} ${t('pluginUpdateRestored', { version: body.from ?? '' })}`
+}
+
+/**
+ * 一个 npm 包（bundle）的卡片：图标 + 标题 + 一句话简介 + 版本 + 状态 + 包级开关 + 更新入口。
  *
  * 为什么以包为单位而不展开内部模块（2.3.0 用户定稿）：本机 200 多条 Loader 条目绝大多数是
- * DSH 自己的内部模块，铺开既看不出「装了什么」也没法批量管理；条目级的精细开关在官方「插件」页。
+ * DSH 自己的模块，铺开既看不出「装了什么」也没法批量管理；条目级的精细开关在官方「插件」页。
  */
-export function PluginBundleCard({ t, bundle, resolveText, busy, onToggleBundle }: PluginBundleCardProps): ReactElement {
+export function PluginBundleCard({ t, bundle, resolveText, busy, update, updating, onToggleBundle, onUpdate }: PluginBundleCardProps): ReactElement {
   const title = bundleTitleOf(bundle, resolveText)
   const description = bundleDescriptionOf(bundle, resolveText)
   const switchReason = bundleToggleReasonOf(t, bundle)
@@ -145,6 +172,7 @@ export function PluginBundleCard({ t, bundle, resolveText, busy, onToggleBundle 
       className="dshp-extension__plugin-card"
       data-official={bundle.official ? 'true' : 'false'}
       data-enabled={bundle.enabled ? 'true' : 'false'}
+      data-update={update === undefined ? 'false' : 'true'}
     >
       <span className="dshp-extension__plugin-card-icon" aria-hidden="true">
         {bundle.icon !== undefined && bundle.icon !== ''
@@ -161,21 +189,35 @@ export function PluginBundleCard({ t, bundle, resolveText, busy, onToggleBundle 
           <Tag tone={bundle.enabled ? 'neutral' : 'warning'}>{bundle.enabled ? t('pluginEnabled') : t('pluginDisabled')}</Tag>
           {switchReason !== undefined && <Tag tone="info">{switchReason}</Tag>}
           {bundle.errorCode !== undefined && bundle.errorCode !== '' && <Tag tone="danger">{bundle.errorCode}</Tag>}
+          {update !== undefined && (
+            <Tag tone="info">
+              {update.from === undefined
+                ? t('pluginUpdateAvailable')
+                : t('pluginUpdateBadge', { from: update.from, to: update.to })}
+            </Tag>
+          )}
         </div>
         {description !== '' && <p className="dshp-extension__plugin-card-desc">{description}</p>}
         <div className="dshp-extension__plugin-card-meta">
           <Tag tone="outline">{bundle.official ? t('pluginsFilterOfficial') : t('pluginsFilterThirdParty')}</Tag>
           <span className="dshp-extension__plugin-card-pkg" title={bundle.name}>{bundle.name}</span>
+          {/* `git` 依赖要一个钉到 full commit 的 spec，面板不自动查/更：给一句可执行的去处。 */}
+          {bundle.update === 'git' && <span className="dshp-extension__plugin-card-pkg">{t('pluginUpdateGitManual')}</span>}
         </div>
       </div>
       {/*
         禁用态的 `<button>` 在 Chromium 里收不到鼠标事件、title 常不弹，所以原因同时挂在外层
         那个不会禁用的 span 上（与 restart-control.tsx 同一个坑）。
       */}
+      {update !== undefined && onUpdate !== undefined && (
+        <Button variant="ghost" size="sm" disabled={busy || updating} onClick={() => onUpdate(bundle, update.to)}>
+          {updating ? t('pluginUpdating') : t('pluginUpdateTo', { version: update.to })}
+        </Button>
+      )}
       <span className="dshp-extension__tip" title={switchReason}>
         <Switch
           checked={bundle.enabled}
-          disabled={busy || switchReason !== undefined}
+          disabled={busy || updating || switchReason !== undefined}
           label={t('toggle')}
           title={switchReason}
           onChange={() => onToggleBundle(bundle)}
@@ -204,6 +246,13 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
   const [installOpen, setInstallOpen] = useState(false)
   const [banner, setBanner] = useState<{ kind: 'ok' | 'info' | 'error', text: string } | null>(null)
   const [undo, setUndo] = useState<PluginUndoRecord | null>(null)
+  // 检查更新：`checks` 是当前已知结论（含缓存里的），`checking` 只影响工具栏文案，不挡列表。
+  const [checks, setChecks] = useState<Record<string, PluginUpdateCheckView>>({})
+  const [checking, setChecking] = useState(false)
+  const [checkError, setCheckError] = useState<string | null>(null)
+  // 「更新到 x.y.z」先落到这里，再由确认弹窗决定要不要真跑。
+  const [updateTarget, setUpdateTarget] = useState<{ bundle: PluginBundleView, to: string } | null>(null)
+  const [updating, setUpdating] = useState(false)
   const { mounted } = useTimers()
 
   useEffect(() => {
@@ -235,6 +284,122 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
   const bundles = data?.bundles ?? []
   const needle = query.trim().toLowerCase()
   const visible = bundles.filter(bundle => bundleMatchesFilter(bundle, filter) && bundleMatchesQuery(bundle, needle, resolveText))
+  // 这一批里「按版本号可更新」的包：决定要不要查、以及工具栏状态怎么措辞。
+  const updatableNames = useMemo(() => registryUpdatableOf(data?.bundles ?? []), [data])
+  const updateCount = updatedCountOf(checks, updatableNames)
+  // 有更新的置顶（用户定稿：只在整批检查结束后重排一次，不边到货边挪）；其余保持宿主顺序。
+  const sortedVisible = sortBundlesByUpdate(visible, checks)
+
+  const applyChecks = (list: readonly PluginUpdateCheckView[]): void => {
+    if (list.length === 0)
+      return
+    const now = Date.now()
+    for (const check of list)
+      updateCheckCache.set(check.name, { at: now, check })
+    setChecks((current) => {
+      const next = { ...current }
+      for (const check of list)
+        next[check.name] = check
+      return next
+    })
+  }
+
+  /**
+   * 跑一次批量检查。
+   *
+   * `manual` 只影响失败怎么表现：自动查失败**静默**（离线是常态，留一条红条只会让人以为面板坏了），
+   * 手动查必须说清楚为什么没查到。
+   */
+  const runCheck = async (names: readonly string[], manual: boolean): Promise<void> => {
+    if (names.length === 0)
+      return
+    setChecking(true)
+    if (manual)
+      setCheckError(null)
+    try {
+      const body = await postPluginUpdateCheck({ names: [...names] })
+      if (!mounted.current)
+        return
+      applyChecks(Array.isArray(body.checks) ? body.checks : [])
+    }
+    catch (error) {
+      if (!mounted.current)
+        return
+      if (manual) {
+        setCheckError(`${t('pluginUpdateCheckFailed')}: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    finally {
+      if (mounted.current)
+        setChecking(false)
+    }
+  }
+
+  /**
+   * 进页面自动查一次：先把缓存里**还新鲜**的结论贴上去（重挂时徽标立刻可见），再补查过期的。
+   *
+   * 依赖 `data` 而不是 `bundles`：后者每次渲染都是新数组，会让这个 effect 每帧都跑。
+   */
+  useEffect(() => {
+    if (data === null)
+      return
+    const names = registryUpdatableOf(data.bundles)
+    if (names.length === 0)
+      return
+    const now = Date.now()
+    const cached: Record<string, PluginUpdateCheckView> = {}
+    const pending: string[] = []
+    for (const name of names) {
+      const entry = updateCheckCache.get(name)
+      if (isCheckStale(entry?.at, now, PLUGIN_UPDATE_CHECK_TTL_MS))
+        pending.push(name)
+      else if (entry !== undefined)
+        cached[name] = entry.check
+    }
+    if (Object.keys(cached).length > 0)
+      setChecks(current => ({ ...current, ...cached }))
+    void runCheck(pending, false)
+    // `runCheck` 每次渲染都是新函数，但它只读 state、不参与依赖；这里只按 `data` 触发。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data])
+
+  /** 执行更新（确认之后才走到这里）：成功后清掉这一包的缓存并重拉列表。 */
+  const doUpdate = async (): Promise<void> => {
+    const target = updateTarget
+    if (target === null)
+      return
+    const registry = checks[target.bundle.name]?.registry
+    setUpdating(true)
+    try {
+      const body = await postPluginUpdate({
+        name: target.bundle.name,
+        version: target.to,
+        ...(typeof registry === 'string' && registry !== '' ? { registry } : {}),
+      })
+      if (!mounted.current)
+        return
+      setBanner({ kind: body.ok ? 'ok' : 'error', text: updateOutcomeText(t, body) })
+      if (body.ok) {
+        setUpdateTarget(null)
+        // 装完必须让下一次检查重新问：否则徽标还停在旧结论上，用户会以为「更新没生效」。
+        updateCheckCache.delete(target.bundle.name)
+        setChecks((current) => {
+          const next = { ...current }
+          delete next[target.bundle.name]
+          return next
+        })
+        setReload(value => value + 1)
+      }
+    }
+    catch (error) {
+      if (mounted.current)
+        setBanner({ kind: 'error', text: `${t('pluginUpdateFailed')}: ${error instanceof Error ? error.message : String(error)}` })
+    }
+    finally {
+      if (mounted.current)
+        setUpdating(false)
+    }
+  }
 
   /**
    * 一次变更之后共用的收尾：写 banner、必要时留撤销记录、重拉清单。
@@ -312,12 +477,29 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
     { value: 'official', label: t('pluginsFilterOfficial') },
   ]), [t])
 
+  /** 工具栏右侧那句状态：只在「这一批真有可更新的包」时才说话，否则一句话都不占。 */
+  const checkStatusText = (): string | null => {
+    if (updatableNames.length === 0)
+      return null
+    if (checking)
+      return t('pluginCheckingUpdates')
+    if (checkError !== null)
+      return checkError
+    return updateCount > 0 ? t('pluginUpdatesAvailable', { count: updateCount }) : t('pluginUpToDate')
+  }
+  const statusText = checkStatusText()
+
   return (
     <div className="dshp-extension__section">
       <div className="dshp-extension__head">
         <span className="dshp-extension__head-icon"><Icon as={Puzzle} size={16} /></span>
         <h3>{t('pluginsTitle')}</h3>
         <span className="dshp-extension__spacer" />
+        {updatableNames.length > 0 && (
+          <Button variant="ghost" size="sm" disabled={busy || checking} onClick={() => void runCheck(updatableNames, true)}>
+            {t('pluginCheckUpdates')}
+          </Button>
+        )}
         {/* 文字按钮而不是图标：右上角重启控件已经占了一个旋转图标，两个图标并排会认错。 */}
         <Button variant="ghost" size="sm" disabled={busy} onClick={() => setReload(value => value + 1)}>{t('refresh')}</Button>
         <Button variant="primary" size="sm" title={t('pluginInstallHint')} onClick={() => setInstallOpen(true)}>{t('pluginInstall')}</Button>
@@ -353,6 +535,7 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
         {data !== null && (
           <span className="dshp-extension__count">{t('pluginsCount', { bundles: bundles.length })}</span>
         )}
+        {statusText !== null && <span className="dshp-extension__count">{statusText}</span>}
         <span className="dshp-extension__spacer" />
         <Input
           className="dshp-extension__search"
@@ -375,18 +558,24 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
           )}
         </div>
       )}
-      {visible.length > 0 && (
+      {sortedVisible.length > 0 && (
         <ul className="dshp-extension__plugin-bundles">
-          {visible.map(bundle => (
-            <PluginBundleCard
-              key={bundle.name}
-              t={t}
-              bundle={bundle}
-              resolveText={resolveText}
-              busy={busy}
-              onToggleBundle={target => void doToggleBundle(target)}
-            />
-          ))}
+          {sortedVisible.map((bundle) => {
+            const update = updateBadgeOf(bundle, checks[bundle.name])
+            return (
+              <PluginBundleCard
+                key={bundle.name}
+                t={t}
+                bundle={bundle}
+                resolveText={resolveText}
+                busy={busy}
+                {...update === undefined ? {} : { update }}
+                updating={updating && updateTarget?.bundle.name === bundle.name}
+                onToggleBundle={target => void doToggleBundle(target)}
+                onUpdate={(target, version) => setUpdateTarget({ bundle: target, to: version })}
+              />
+            )
+          })}
         </ul>
       )}
       {/*
@@ -400,6 +589,31 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
         openMarket={openMarket}
         onInstalled={() => setReload(value => value + 1)}
       />
+
+      {/* 更新要**逐个确认**（用户定稿）：它会先卸旧版再装新版，误触的代价是插件短暂消失。 */}
+      <Modal
+        open={updateTarget !== null}
+        onClose={() => { if (!updating) setUpdateTarget(null) }}
+        closeLabel={t('close')}
+        title={t('pluginUpdateTitle')}
+        footer={(
+          <>
+            <Button variant="ghost" disabled={updating} onClick={() => setUpdateTarget(null)}>{t('cancel')}</Button>
+            <Button variant="primary" disabled={updating} onClick={() => void doUpdate()}>
+              {updating ? t('pluginUpdating') : t('pluginUpdateConfirmAction')}
+            </Button>
+          </>
+        )}
+      >
+        {updateTarget !== null && (
+          <>
+            <p>{t('pluginUpdateConfirm', { from: updateTarget.bundle.version ?? '', to: updateTarget.to })}</p>
+            {typeof checks[updateTarget.bundle.name]?.registry === 'string' && (
+              <p className="dshp-extension__intro">{t('pluginUpdateRegistry', { registry: String(checks[updateTarget.bundle.name]?.registry) })}</p>
+            )}
+          </>
+        )}
+      </Modal>
     </div>
   )
 }

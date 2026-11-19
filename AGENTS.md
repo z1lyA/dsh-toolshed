@@ -43,7 +43,7 @@ pnpm install
 pnpm typecheck     # tsc --noEmit（上游代码宽松，故 strict: false）
 pnpm build         # node scripts/build.mjs
 pnpm test          # node scripts/run-tests.mjs（签绑定 + 挑非 hardened Node，见约束 3）
-node .test/host-smoke.mjs 22   # 不起 DSH：mock ctx 调 apply()，数 webServer.register 的行数（应为 22）
+node .test/host-smoke.mjs 24   # 不起 DSH：mock ctx 调 apply()，数 webServer.register 的行数（应为 24）
 ```
 
 > **typecheck 需要宿主提供的 `@deepseek-ai/*` 类型**（约束 4 让它们保持 external）。作者机器上这些类型来自
@@ -83,7 +83,7 @@ curl -s http://127.0.0.1:<port>/dsh-toolshed/api/skills
 ```
 
 host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.js`，用带 `webServer` / `skills` / `connection` / `logger` / `on`
-的 mock ctx 调 `apply(ctx, { profile: 'desktop' })`，应注册 **22** 条路由且不抛错（`.test/host-smoke.mjs` 就是它）。
+的 mock ctx 调 `apply(ctx, { profile: 'desktop' })`，应注册 **24** 条路由且不抛错（`.test/host-smoke.mjs` 就是它）。
 
 ## 约定
 
@@ -163,6 +163,17 @@ host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.
   - `inspect` 的签名是 `inspect(spec, options?, signal?)`——将来要传 registry 得放进**第二个对象参数**，别当 signal。
   - 安装入口的判据是「先检查通过才能装」：`inspect` 不可用（503）时安装按钮不可点。
   - 安装结果除 `application` 外还带 `failureKind` 与 `output`（宿主截到尾部 8 KiB）：失败时那是唯一线索。
+- **插件更新走官方 `listVersions` + `updateBundle`**（`service/plugins.ts` 的 `resolvePluginUpdater`，2.7.0）：
+  - `POST /api/plugins/updates`（批量检查，body `{ names }`）**串行**逐个 `listVersions(name, {})`——官方客户端也是串行，
+    一次点出 N 个 registry 请求既慢又容易被限流；单个包失败只记 `refused`，不中断整批。
+  - 「更新到哪个版本」必须用官方口径挑：`bundle && !incompatible && !deprecated && !prerelease`（`updateCandidate`），
+    别自己挑「最新」——预发布/弃用/不兼容 dsh 的版本装上去就起不来。
+  - `POST /api/plugins/update`（`{ name, version, registry? }`）→ `updateBundle`。**更新是「先卸旧版再装新版」**：
+    `restore` 出现表示新版失败后旧版已被装回，页面必须说出来，别让用户以为版本变了。
+  - 只对 `BundleInfo.update === 'registry'` 的包查/更（`link:` 本地依赖没有这个字段，永远不可更新；
+    `update === 'git'` 需要调用方给钉到 full commit 的 spec，面板不做，只提示去官方页）。
+  - 客户端策略（2.7.0 定）：进 tab 自动批量查一次 + 10 分钟内存缓存；**检查全部完成后一次性**把有更新的置顶；
+    **每次更新都要确认**（不做「查到就装」）。
 - **侧栏自带的「插件」行是 DOM 兜底隐藏的，「更多」只在安全时才藏**（`register/sidebar-tweaks.ts`），
   属**已知易碎**方案：官方 `ctx.slots` 没有 `when/hidden`、不能反注册他人条目，pins 还把 `plugins` 写死常驻，
   只有 DOM 一条路。定位只用语义锚点（`[data-slot="sidebar.panellist"]` 认 nav、运行时按槽条目 label 反查
