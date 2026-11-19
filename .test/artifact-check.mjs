@@ -51,7 +51,8 @@ const present = [
   // 并且市场入口会直接点到官方页的「发现」tab
   [client, 'pluginsIntroV2'],
   [client, 'pluginOfficialManage'],
-  [client, 'pluginShowAll'],
+  // 2.9.0：官方包不在本页列，给一条直达官方插件页的入口，并去掉官方/第三方筛选
+  [client, 'pluginOfficialPage'],
   // 2.3.0：只讲包。包级启停是唯一写操作，条目级路由与文案必须彻底消失（见 absent）
   [client, '/plugins/bundle/toggle'],
   // 2.4.0：会话页按工作区分组（组默认折叠），以及插件页不再列出「官方页没有页面的包」

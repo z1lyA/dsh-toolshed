@@ -372,6 +372,27 @@ export function activateDiscoverTabEventually(
  * 为什么包 try/catch：`selectPanel` 在对端没注册这个 main 面板时会抛错（ui-layout 的校验），
  * 而这里的调用点在点击回调里——抛出去只变成一条未捕获弹栈，用户看不到任何解释。
  */
+/**
+ * 打开官方「插件」页并**停在「已安装」tab**（用于管理官方插件：启停 / 卸载 / 换版本）。
+ *
+ * 与 `openMarketLauncherOf` 的区别只有一点：不点「发现」那个 tab。两者共用同一套降级链
+ * （`pluginNavigation.openList` → `layout.selectPanel('plugins')`），拿不到就不渲染入口。
+ */
+export function openOfficialPageOf(ctx: unknown): (() => void) | undefined {
+  const navigation = readService(ctx, 'pluginNavigation')
+  const openList = readMember(navigation, 'openList')
+  if (openList !== undefined)
+    return () => invokeQuietly('pluginNavigation.openList', () => openList.call(navigation))
+
+  const layout = readService(ctx, 'layout')
+  const selectPanel = readMember(layout, 'selectPanel')
+  if (selectPanel === undefined)
+    return undefined
+  if (mainPanelRegistered(ctx) === false)
+    return undefined
+  return () => invokeQuietly('layout.selectPanel(plugins)', () => selectPanel.call(layout, 'plugins'))
+}
+
 export function openMarketLauncherOf(ctx: unknown): (() => void) | undefined {
   const target = discoverTabTargetOf(ctx)
   const openDiscover = (): void => activateDiscoverTabEventually(target, { report: debugReport })

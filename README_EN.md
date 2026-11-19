@@ -121,13 +121,14 @@ the **top-right corner of the tab row** holds refresh + restart:
 - **Skills** (list with a **source-category filter** — project / user / runtime / bundled — plus search, enable/disable,
   view/edit SKILL.md, create — opens a new conversation in the
   current workspace with `/skill-creator` prefilled — delete, open folder, refresh),
-- **Plugins** (**packages only (npm bundles)**: icon + name + one-line description + version + state; `All / Third-party /
-  Official` filter (third-party by default), search (package name, title, description), **package-level
+- **Plugins** (**packages only (npm bundles)**, and only the third-party ones you installed in this profile: icon + name +
+  one-line description + version + state; search (package name, title, description), **package-level
   enable/disable**, **uninstall** (only for bundles the official service marks removable, with confirmation), **update
   check & one-click update** (checked once on entry, 10-minute cache, updatable packages
   pinned to the top with a `0.6.4 → 0.6.5` badge; "Update to x.y.z" asks for confirmation first), and **undo of the
-  last change** when a toggle fails; the **Plugin market** button opens the official Plugins page straight on its
-  **Discover** tab. **No Loader entries** — fine-grained entry switches live on the official Plugins page),
+  last change** when a toggle fails; the toolbar carries **Official plugins** (enable/disable, uninstall and version
+  changes for official bundles happen there) and **Install plugin** (by package name). **No Loader entries and no
+  official bundles** — both live on the official Plugins page),
 - **Sessions** (archived sessions **grouped by workspace** — groups collapsed by default, click a workspace to see its
   sessions; sessions without a workspace fall into a trailing "No workspace" group; each group header carries the name,
   session count, disk usage and pending count. **Select-all spans every group including collapsed ones**, and each group
@@ -152,10 +153,10 @@ the **top-right corner of the tab row** holds refresh + restart:
 The official `listPlugins()` lists **Loader entries**, not packages: DSH splits itself into a few hundred cordis plugin
 entries (227 on this machine — `dsh-base` alone declares 87 and `dsh-web-app` 96), while **you installed 6 packages**.
 
-So this tab **only talks about packages** (`listBundles()`): one card per npm package, **no Loader entries**; the
-filter defaults to **Third-party** (`official === false`), so opening it shows just the few you installed.
-(Fine-grained entry switches — such as turning off one internal module — belong to the official Plugins page, which
-lists every row of a package.)
+So this tab **only talks about packages** (`listBundles()`) **and only about the third-party ones you installed**:
+one card per npm package, **no Loader entries, no official bundles**. (Fine-grained entry switches — such as turning off
+one internal module — belong to the official Plugins page, which lists every row of a package; official bundles are
+managed there too, behind the **Official plugins** button.)
 
 - Package data comes from the official `pluginManager.listBundles()`: `official` (shipped by DSH or listed in the market
   catalog), `installed`, `enabled`, `version`, `availability`, plus the **localized display metadata**
@@ -170,8 +171,8 @@ lists every row of a package.)
   **A `failed` outcome still wrote the file**, so the page keeps an **undo the last change** action.
 - Packages that cannot be toggled say why: `management-required` (plugin management itself needs it) or
   `unaddressable` (this profile's patch cannot address the item uniquely) — the same wording as the official page.
-  **Package-level switches are disabled for official packages** (uninstall/catalog duties belong to the official page);
-  third-party packages are what this tab operates on.
+  **Official bundles never reach this list**: their switch was disabled here anyway (the official page owns them) and
+  their update is refused by the host, so listing them only produced cards nothing could act on.
 - **dsh-toolshed cannot be disabled from here**: it is not in the official protected set, and disabling it would make
   the panel vanish with no way back, so the host refuses with 409 `self-management`.
 - Without a `pluginManager` service (no profile, or DSH < 0.2.2) the route answers 503 `plugin-manager-unavailable` and
@@ -183,7 +184,7 @@ lists every row of a package.)
   `sdk` / `sdk-minimal` profile templates — and `dsh-base` cannot be switched off at all). The list mirrors the official
   `HIDDEN_BUNDLES`; when the two disagree, the official page wins.
 
-The **Plugin market** button opens an **Install plugin** dialog (it does **not** rebuild the official Discover page):
+The **Install plugin** button opens an **Install plugin** dialog (it does **not** rebuild the official Discover page):
 
 - Type a `package name` / `name@1.2.3` / `git+https://…` / local path / tarball URL → **Check** → see what was recognised
   (name, version, one-line description, whether it is a DSH bundle at all; git and tarball specs can only be confirmed

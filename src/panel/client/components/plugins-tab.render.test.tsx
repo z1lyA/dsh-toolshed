@@ -45,7 +45,7 @@ function card(bundle: PluginBundleView): string {
 }
 
 describe('插件页（纯包级视图）', () => {
-  it('载入态就有标题、包级说明、文字「刷新」、「安装插件」入口、三档筛选与搜索框', () => {
+  it('载入态就有标题、包级说明、文字「刷新」、「安装插件」入口与搜索框；不再有官方/第三方筛选', () => {
     const html = renderToStaticMarkup(<PluginsTab t={t} openMarket={noop} />)
 
     expect(html).toContain(t('pluginsTitle'))
@@ -55,13 +55,22 @@ describe('插件页（纯包级视图）', () => {
     // 「插件市场」按钮已换成「安装插件」弹窗入口（用户诉求：知道包名就能直接装）。
     expect(html).toContain(t('pluginInstall'))
     expect(html).toContain(`title="${t('pluginInstallHint')}"`)
-    // 默认「第三方」：三档都在，选中态在第三方（SegmentedControl 用 aria-pressed 表示非 tab 组）。
-    for (const key of ['pluginsFilterAll', 'pluginsFilterThirdParty', 'pluginsFilterOfficial'] as const)
-      expect(html, key).toContain(t(key))
-    expect(html).toContain('role="group"')
+    // 2.9.0：官方包不在本页列（去官方插件页管），所以三档筛选也一起删了。
+    for (const key of ['pluginsFilterAll', 'pluginsFilterThirdParty', 'pluginsFilterOfficial'])
+      expect((t as (key: string) => string)(key), key).toBe(key)
+    expect(html).not.toContain('role="group"')
     expect(html).toContain('data-prim="Input"')
     expect(html).toContain(t('loading'))
     expect(html).not.toContain('undefined')
+  })
+
+  it('有 openOfficialPage 时才渲染「官方插件页」入口', () => {
+    const withEntry = renderToStaticMarkup(<PluginsTab t={t} openMarket={noop} openOfficialPage={noop} />)
+    expect(withEntry).toContain(t('pluginOfficialPage'))
+    expect(withEntry).toContain(`title="${t('pluginOfficialHint')}"`)
+
+    const withoutEntry = renderToStaticMarkup(<PluginsTab t={t} openMarket={noop} />)
+    expect(withoutEntry).not.toContain(t('pluginOfficialPage'))
   })
 
   it('计数只报包数：模板只有 bundles 一个占位符，不再有「条目」那一半', () => {

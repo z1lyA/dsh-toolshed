@@ -138,6 +138,11 @@ host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.
   一律惰性 `ctx.get('pluginManager')`，取不到就回 503 `plugin-manager-unavailable` 让页面降级。
   「停用 dsh-toolshed 自己」在服务层**硬拒绝**（409 `self-management`）：官方保护集里没有本插件，
   停掉面板当场消失、没有恢复入口。
+- **「插件」tab 只讲第三方包**（2.9.0 定稿）：官方包**不在这里列**，也**不要**把「全部 / 第三方 / 官方」三档筛选加回来
+  ——官方包的开关在服务层之外就被产品挡住了（`bundleToggleReasonOf` 对 `official` 一律返回「去官方页管理」），
+  更新又被官方 `updateRefusal` 拒绝（`official` 显式排除），列出来只是一排点不动的卡片。
+  官方插件（启停 / 卸载 / 换版本）走工具栏的**「官方插件页」**入口（`openOfficialPageOf`，落在官方页「已安装」），
+  与「安装插件」弹窗（`openMarketLauncherOf`，落在「发现」）是两条独立入口，别合并。
 - **「插件」tab 只讲包（bundle），不讲 Loader 条目**（2.3.0 定稿）：`listPlugins()` 列的条目在本机有 227 条
   （`dsh-base` 一个包就 87 条、`dsh-web-app` 96 条），那是实现细节、不是「我装了什么」；条目级的精细开关
   留给官方「插件」页。所以 `GET /api/plugins` 只返回 `{ bundles }`，`PluginBundleView` **没有** `rows`，

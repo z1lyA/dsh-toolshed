@@ -5,7 +5,7 @@ import { ExtensionPanel } from '../components/extension-panel'
 import { PANEL_ACTION_ORDER, PANEL_ID } from '../constants'
 import { locale } from '../locales'
 import { store } from '../store'
-import { chooseWorkspace, createSkillSession, openMarketLauncherOf, resolveTextOf, sessionSnapshotOf, workspaceSnapshotOf } from './extension-panel.utils'
+import { chooseWorkspace, createSkillSession, openMarketLauncherOf, openOfficialPageOf, resolveTextOf, sessionSnapshotOf, workspaceSnapshotOf } from './extension-panel.utils'
 
 export const extensionPanelFeature = defineRegister<ClientContext>((controller, ctx, adapter) => {
   let panel: PanelHandle | undefined
@@ -52,7 +52,7 @@ export const extensionPanelFeature = defineRegister<ClientContext>((controller, 
         {/* 市场入口与文案解析每次渲染时重新探一遍：`pluginNavigation` / 官方插件页 / `locale`
             都可能晚于本面板激活，探不到就是 `undefined`（按钮不渲染 / 文案退回 en），
             而不是渲染一个死按钮或在渲染期抛错。 */}
-        <ExtensionPanel createSkill={createSkill} openMarket={openMarketLauncherOf(ctx)} resolveText={resolveTextOf(ctx)} />
+        <ExtensionPanel createSkill={createSkill} openMarket={openMarketLauncherOf(ctx)} openOfficialPage={openOfficialPageOf(ctx)} resolveText={resolveTextOf(ctx)} />
       </PanelPage>
     ),
   })

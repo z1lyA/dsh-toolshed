@@ -3,12 +3,11 @@ import type { LocalizedTextView, PluginBundleView, PluginsListResponse, PluginTo
 import type { Translate } from '../locales/index.types'
 import type {
   PluginBundleCardProps,
-  PluginFilter,
   PluginsTabProps,
   PluginUndoRecord,
   ResolveLocalizedText,
 } from './plugins-tab.types'
-import { Button, Icon, Input, Modal, Puzzle, SegmentedControl, StateDot, Switch, Tag } from 'dsh-tauri-ui/client'
+import { Button, Icon, Input, Modal, Puzzle, StateDot, Switch, Tag } from 'dsh-tauri-ui/client'
 import { useEffect, useMemo, useState } from 'react'
 import { ApiError, getPlugins, postPluginBundleToggle, postPluginRemove, postPluginUpdate, postPluginUpdateCheck } from '../apis'
 import { PLUGIN_ID, PLUGIN_UPDATE_CHECK_TTL_MS } from '../constants'
@@ -59,14 +58,6 @@ export function bundleDescriptionOf(bundle: PluginBundleView, resolveText?: Reso
   if (description !== '')
     return description
   return (bundle.manifestDescription ?? '').trim()
-}
-
-function bundleMatchesFilter(bundle: PluginBundleView, filter: PluginFilter): boolean {
-  if (filter === 'official')
-    return bundle.official
-  if (filter === 'third-party')
-    return !bundle.official
-  return true
 }
 
 /**
@@ -199,7 +190,6 @@ export function PluginBundleCard({ t, bundle, resolveText, busy, update, updatin
         </div>
         {description !== '' && <p className="dshp-extension__plugin-card-desc">{description}</p>}
         <div className="dshp-extension__plugin-card-meta">
-          <Tag tone="outline">{bundle.official ? t('pluginsFilterOfficial') : t('pluginsFilterThirdParty')}</Tag>
           <span className="dshp-extension__plugin-card-pkg" title={bundle.name}>{bundle.name}</span>
           {/* `git` 依赖要一个钉到 full commit 的 spec，面板不自动查/更：给一句可执行的去处。 */}
           {bundle.update === 'git' && <span className="dshp-extension__plugin-card-pkg">{t('pluginUpdateGitManual')}</span>}
@@ -241,10 +231,8 @@ export function PluginBundleCard({ t, bundle, resolveText, busy, update, updatin
  * 这个按钮已经换成「安装插件」弹窗（用户诉求：知道包名就能直接装），浏览/搜索仍交给官方的
  * 「发现」页——市场 UI 不可复用，复刻必然跟着索引格式漂移（§2.5）。
  */
-export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): ReactElement {
+export function PluginsTab({ t, openMarket, openOfficialPage, resolveText }: PluginsTabProps): ReactElement {
   const [data, setData] = useState<PluginsListResponse | null>(null)
-  // 默认「第三方」：官方包会把这几个包淹掉，而用户要管的正是第三方那几个。
-  const [filter, setFilter] = useState<PluginFilter>('third-party')
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
   const [reload, setReload] = useState(0)
@@ -291,10 +279,18 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
   }, [reload, t])
 
   const bundles = data?.bundles ?? []
+  /**
+   * 本页只讲**第三方**（= 这个 profile 自己装的）包。
+   *
+   * 为什么不列官方包（2.9.0 用户定稿）：官方包的开关在本页本来就是禁用态（`bundleToggleReasonOf`
+   * 对 `official` 一律返回「去官方页管理」），更新又被官方 `updateRefusal` 显式拒绝，留下来只是一排
+   * 点不动的卡片。官方包的管理（启停 / 卸载 / 换版本）统一去官方插件页——页面上给了直达入口。
+   */
+  const listed = bundles.filter(bundle => !bundle.official)
   const needle = query.trim().toLowerCase()
-  const visible = bundles.filter(bundle => bundleMatchesFilter(bundle, filter) && bundleMatchesQuery(bundle, needle, resolveText))
+  const visible = listed.filter(bundle => bundleMatchesQuery(bundle, needle, resolveText))
   // 这一批里「按版本号可更新」的包：决定要不要查、以及工具栏状态怎么措辞。
-  const updatableNames = useMemo(() => registryUpdatableOf(data?.bundles ?? []), [data])
+  const updatableNames = useMemo(() => registryUpdatableOf(data?.bundles.filter(bundle => !bundle.official) ?? []), [data])
   const updateCount = updatedCountOf(checks, updatableNames)
   // 有更新的置顶（用户定稿：只在整批检查结束后重排一次，不边到货边挪）；其余保持宿主顺序。
   const sortedVisible = sortBundlesByUpdate(visible, checks)
@@ -513,12 +509,6 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
     }
   }
 
-  const filterOptions = useMemo(() => ([
-    { value: 'all', label: t('pluginsFilterAll') },
-    { value: 'third-party', label: t('pluginsFilterThirdParty') },
-    { value: 'official', label: t('pluginsFilterOfficial') },
-  ]), [t])
-
   /** 工具栏右侧那句状态：只在「这一批真有可更新的包」时才说话，否则一句话都不占。 */
   const checkStatusText = (): string | null => {
     if (updatableNames.length === 0)
@@ -544,6 +534,12 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
         )}
         {/* 文字按钮而不是图标：右上角重启控件已经占了一个旋转图标，两个图标并排会认错。 */}
         <Button variant="ghost" size="sm" disabled={busy} onClick={() => setReload(value => value + 1)}>{t('refresh')}</Button>
+        {/* 官方插件（随 DSH 提供 / 市场装的）在本页既不能更也不能在这里管：给一条直达官方插件页的路。 */}
+        {openOfficialPage !== undefined && (
+          <Button variant="ghost" size="sm" title={t('pluginOfficialHint')} onClick={() => openOfficialPage()}>
+            {t('pluginOfficialPage')}
+          </Button>
+        )}
         <Button variant="primary" size="sm" title={t('pluginInstallHint')} onClick={() => setInstallOpen(true)}>{t('pluginInstall')}</Button>
       </div>
       {/* 这段说明回答的是「为什么只有这么几个插件」：一个包可能含多条内部模块，条目级开关在官方页。 */}
@@ -568,14 +564,8 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
       )}
 
       <div className="dshp-extension__plugin-toolbar">
-        <SegmentedControl
-          label={t('pluginsTab')}
-          value={filter}
-          options={filterOptions}
-          onChange={(next) => setFilter(next as PluginFilter)}
-        />
         {data !== null && (
-          <span className="dshp-extension__count">{t('pluginsCount', { bundles: bundles.length })}</span>
+          <span className="dshp-extension__count">{t('pluginsCount', { bundles: listed.length })}</span>
         )}
         {statusText !== null && <span className="dshp-extension__count">{statusText}</span>}
         <span className="dshp-extension__spacer" />
@@ -590,14 +580,10 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
       </div>
 
       {data === null && <p className="dshp-extension__empty">{t('loading')}</p>}
-      {data !== null && bundles.length === 0 && <p className="dshp-extension__empty">{t('pluginEmpty')}</p>}
-      {data !== null && bundles.length > 0 && visible.length === 0 && (
+      {data !== null && listed.length === 0 && <p className="dshp-extension__empty">{t('pluginEmpty')}</p>}
+      {data !== null && listed.length > 0 && visible.length === 0 && (
         <div className="dshp-extension__plugin-empty">
-          <p className="dshp-extension__empty">{needle === '' ? t('pluginNoBundleMatch') : t('pluginNoMatch')}</p>
-          {/* 筛选后为空时给一条退路；搜索后为空则只需要说明「没匹配」，不用建议切筛选。 */}
-          {needle === '' && filter !== 'all' && (
-            <Button variant="ghost" size="sm" onClick={() => setFilter('all')}>{t('pluginShowAll')}</Button>
-          )}
+          <p className="dshp-extension__empty">{t('pluginNoMatch')}</p>
         </div>
       )}
       {sortedVisible.length > 0 && (
