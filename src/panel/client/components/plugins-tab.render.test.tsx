@@ -201,6 +201,35 @@ describe('插件更新入口（2.7.0）', () => {
   })
 })
 
+describe('插件卸载入口（2.8.0）', () => {
+  it('官方说 removable 的包才出现「卸载」按钮', () => {
+    const html = renderToStaticMarkup(
+      <PluginBundleCard
+        t={t}
+        bundle={{ ...thirdParty, removable: true }}
+        busy={false}
+        onToggleBundle={noop}
+        onRemove={noop}
+      />,
+    )
+    expect(html).toContain(`data-prim="Button">${t('pluginRemove')}<`)
+  })
+
+  it('不可移除的包（随安装包提供的官方包）没有卸载按钮', () => {
+    const html = renderToStaticMarkup(
+      <PluginBundleCard t={t} bundle={official} busy={false} onToggleBundle={noop} onRemove={noop} />,
+    )
+    expect(html).not.toContain(t('pluginRemove'))
+  })
+
+  it('页面不给 dsh-toolshed 自己传卸载回调，卡片因此不渲染它', () => {
+    const html = renderToStaticMarkup(
+      <PluginBundleCard t={t} bundle={{ ...thirdParty, name: 'dsh-toolshed', removable: true }} busy={false} onToggleBundle={noop} />,
+    )
+    expect(html).not.toContain(t('pluginRemove'))
+  })
+})
+
 describe('localizedTextOf', () => {
   it('prefers the injected runtime resolver over the raw shape', () => {
     const text = { en: 'Official', zh: '官方' }

@@ -137,7 +137,7 @@ pnpm install --dir ~/.dsh/profiles/<profile>
 | Tab | 能力 |
 | --- | --- |
 | **技能** | 技能列表、**按来源类别筛选**（项目 / 用户 / 运行时 / 内置）、搜索、启用 / 停用、查看与编辑 SKILL.md、新建技能（在当前工作区开一条新对话并预填 `/skill-creator`）、删除、打开目录、刷新。来源按类别合并展示：`~/.dsh/skills` 与 `~/.agents/skills` 都算「用户」 |
-| **插件** | **只按包（npm bundle）**列出当前 profile 的插件：图标 + 名称 + 一句话简介 + 版本 + 启停状态；`全部 / 第三方 / 官方` 三档筛选（默认第三方）、搜索（包名 / 标题 / 简介）、**包级启用 / 停用**、**检查更新与一键更新**（进页面自动查一次、10 分钟缓存、有更新的置顶并标 `可更新 x → y`，点「更新到 x.y.z」逐个确认后执行）、失败后**撤销上次变更**；右上角「插件市场」直接跳到官方插件页的**发现** tab。**不展示 Loader 条目**——条目级的精细开关在官方插件页 |
+| **插件** | **只按包（npm bundle）**列出当前 profile 的插件：图标 + 名称 + 一句话简介 + 版本 + 启停状态；`全部 / 第三方 / 官方` 三档筛选（默认第三方）、搜索（包名 / 标题 / 简介）、**包级启用 / 停用**、**卸载**（`可移除` 的包才有入口，二次确认）、**检查更新与一键更新**（进页面自动查一次、10 分钟缓存、有更新的置顶并标 `可更新 x → y`，点「更新到 x.y.z」逐个确认后执行）、失败后**撤销上次变更**；右上角「插件市场」直接跳到官方插件页的**发现** tab。**不展示 Loader 条目**——条目级的精细开关在官方插件页 |
 | **会话** | 已归档会话**按工作区分组**（组默认折叠，点开才见该工作区的会话；无工作区的归「未关联工作区」并置底）；组头 = 工作区名 + 会话数 + 该组占用 + 待删除数；**全局全选跨所有组（含折叠的）**，每组另有组内全选 / 半选。会话行仍显示**会话名 + 短 id**、精确磁盘占用、文件数、子代理数；批量**取消归档**、批量**删除**（dry-run 计划 → 确认 → **当场删文件**，归档墓碑留到下次启动清，两个页面立刻干净）、**待删除**队列与取消 |
 | **MCP** | 服务器列表（项目级 / 全局、启用状态、传输方式、URL / 命令）、新增与编辑表单、启用 / 停用、连接检查、复制片段、从其他 DSH profile 或 Claude / Cursor / Windsurf / VS Code 配置**导入扫描**、JSON 导出导入；写入后提示「需要重启」 |
 | **右上角重启控件** | 只有一个「重启服务」（进程级）。**不因为有会话在跑而禁用**：只有「不是桌面应用」或「正在重启」才禁用；点它时现读一次活跃工作，`title` 与确认弹窗会列出重启会中断什么（运行中的会话 / 排队输入 / 后台任务各几个） |
@@ -197,7 +197,19 @@ pnpm install --dir ~/.dsh/profiles/<profile>
 > `plugins.tab`），既没有组件也没有 `render()`；复刻一遍会跟着市场索引与详情文档的格式一起漂移。
 > 而「输入包名直接装」这件事**根本不需要市场索引**——它只是官方 `installBundle` 的一层壳。
 
+#### 卸载
+
+- 卡片右下角的「卸载」只在官方说这一包**可移除**（`BundleInfo.removable`）时才出现：
+  **profile 自己装的依赖**（包括从市场「发现」页装的官方可选 bundle）可移除；
+  **随 DSH 安装包提供**的官方包（`dsh-base` 之类）永远不可移除，所以根本没有按钮。
+- 点「卸载」→ 二次确认 → 走官方 `removeBundle`：**先把它移出插件组合（取消选中）→ 再 `pnpm remove` → reload**。
+  所以它和停用的区别是：停用只改组合，卸载会把依赖从 profile 里删掉（`link:` 本地依赖不会删源目录）。
+- **dsh-toolshed 自己不显示卸载入口**（服务层也硬拒绝 409 `self-management`）：卸掉面板当场消失、没有恢复入口。
+- 官方可能拒绝并给出机器码：`not-removable`（官方认为是安装包提供的）/ `stop-profile`（没有 hmr 且已在跑）/
+  `bundle-in-use`（还有活的 Loader 条目）——页面会把机器码原样显示出来。
+
 #### 更新
+
 
 - **进入「插件」页时自动查一次**（只查 `update === 'registry'` 的包，串行、不阻塞列表渲染），
   结果缓存 10 分钟；顶部有「检查更新」可手动重查（手动重查失败会把原因说出来，自动查失败保持静默）。
@@ -281,10 +293,10 @@ Web / CLI 会如实显示「不可用」——那种形态下杀了自己没人�
 | 方法 | 路径 |
 | --- | --- |
 | GET | `/dsh-toolshed/api/skills`、`/api/mcp`、`/api/skill?name=`、`/api/roots`、`/api/import/scan`、`/api/archived`、`/api/plugins`、`/api/host/restart` |
-| POST | `/api/mcp`、`/api/mcp/toggle`、`/api/mcp/check`、`/api/mcp/copy`、`/api/skills/refresh`、`/api/skill`、`/api/skill/policy`、`/api/import/apply`、`/api/roots`、`/api/open/dir`、`/api/plugins/bundle/toggle`、`/api/plugins/inspect`、`/api/plugins/install`、`/api/plugins/updates`、`/api/plugins/update`、`/api/host/restart`、`/api/archive/plan`、`/api/archive/unarchive`、`/api/archive/pending/cancel` |
+| POST | `/api/mcp`、`/api/mcp/toggle`、`/api/mcp/check`、`/api/mcp/copy`、`/api/skills/refresh`、`/api/skill`、`/api/skill/policy`、`/api/import/apply`、`/api/roots`、`/api/open/dir`、`/api/plugins/bundle/toggle`、`/api/plugins/inspect`、`/api/plugins/install`、`/api/plugins/updates`、`/api/plugins/update`、`/api/plugins/remove`、`/api/host/restart`、`/api/archive/plan`、`/api/archive/unarchive`、`/api/archive/pending/cancel` |
 | DELETE | `/api/mcp`、`/api/skill`、`/api/roots`、`/api/archive` |
 
-`defineRoutes` 按 `(kind, path)` 收敛，同一路径的多个方法只占一行 `webServer.register`：2.7.0 起共 **24** 行。
+`defineRoutes` 按 `(kind, path)` 收敛，同一路径的多个方法只占一行 `webServer.register`：2.8.0 起共 **25** 行。
 错误体统一是 `{ error, code }`（重启被挡住时多一个 `blockers` 数组），面板靠 `code` 分支。
 `/api/plugins` 在缺少官方 `pluginManager` 服务时回 503 `plugin-manager-unavailable`；
 `/api/plugins/bundle/toggle` 在「停用 dsh-toolshed 自己」时回 409 `self-management`，
@@ -295,6 +307,8 @@ Web / CLI 会如实显示「不可用」——那种形态下杀了自己没人�
 后者把官方 `ChangeResult` 里与装包有关的部分投影出来（含 `pendingBuilds` 与 pnpm 输出尾部）。
 `/api/plugins/updates` 批量检查（串行问 registry，单个失败只记 `refused` 不中断），`/api/plugins/update`
 执行更新并把官方的 `PluginUpdateResult` 投影出来——`restore` 字段出现即表示「新版失败、旧版已装回」。
+`/api/plugins/remove` 执行卸载（官方 `removeBundle`：取消选中 → `pnpm remove` → reload），
+拒绝码 `not-removable` / `stop-profile` / `bundle-in-use` 原样透出。
 
 ## 🛠 开发
 

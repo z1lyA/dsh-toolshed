@@ -123,7 +123,8 @@ the **top-right corner of the tab row** holds refresh + restart:
   current workspace with `/skill-creator` prefilled — delete, open folder, refresh),
 - **Plugins** (**packages only (npm bundles)**: icon + name + one-line description + version + state; `All / Third-party /
   Official` filter (third-party by default), search (package name, title, description), **package-level
-  enable/disable**, **update check & one-click update** (checked once on entry, 10-minute cache, updatable packages
+  enable/disable**, **uninstall** (only for bundles the official service marks removable, with confirmation), **update
+  check & one-click update** (checked once on entry, 10-minute cache, updatable packages
   pinned to the top with a `0.6.4 → 0.6.5` badge; "Update to x.y.z" asks for confirmation first), and **undo of the
   last change** when a toggle fails; the **Plugin market** button opens the official Plugins page straight on its
   **Discover** tab. **No Loader entries** — fine-grained entry switches live on the official Plugins page),
@@ -221,6 +222,18 @@ The **Plugin market** button opens an **Install plugin** dialog (it does **not**
 > the Toolshed page unmounts (filters and search lost) and coming back lands on the first tab (Skills), while the detail
 > page's own back button only returns to the official Installed list. So updating happens in-page; detail/uninstall/pick
 > a version stay behind the **Plugin market** button, which explicitly means "go to the official page".
+
+#### Uninstall
+
+- The **Uninstall** action only appears when the official service marks the bundle **removable**
+  (`BundleInfo.removable`): profile-owned dependencies (including official optional bundles installed from the market's
+  Discover tab) are removable; bundles shipped with the DSH installation are not, so they have no button at all.
+- Uninstall asks for confirmation, then calls the official `removeBundle`: **deselect it from the bundle list →
+  `pnpm remove` → reload**. That is the difference from disabling: disabling only edits the bundle selection, while
+  uninstalling drops the dependency from the profile (`link:` targets are not deleted).
+- **dsh-toolshed itself has no Uninstall action** (the service also refuses with 409 `self-management`): removing the
+  panel makes it vanish with no way back.
+- The official refusal codes (`not-removable` / `stop-profile` / `bundle-in-use`) are shown verbatim.
 
 > **Known limitation (fragile)**: to funnel the entry points into this panel, `register/sidebar-tweaks.ts` hides the
 > sidebar's own **Plugins** row (the official build hard-codes it as always present, so it never gets lost) and hides

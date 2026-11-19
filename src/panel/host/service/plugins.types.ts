@@ -53,6 +53,13 @@ export interface PluginBundleView {
    * （`link:` / 本地路径依赖就是这种，比如 `dsh-toolshed` 自己）。
    */
   update?: string
+  /**
+   * 官方 `BundleInfo.removable`：这一包能不能**卸载**。
+   *
+   * 官方口径：profile 自己装的依赖（`owned`）或「只在组合里、没有依赖」的可选包才可移除；随安装包提供的
+   * 官方包永远是 `false`。缺省/`false` 时页面**不渲染**卸载入口——否则按钮点下去只会拿到 `not-removable`。
+   */
+  removable?: boolean
 }
 
 export interface PluginsListResponse {
@@ -241,3 +248,16 @@ export interface PluginUpdateResponse {
   /** 失败后把旧版装回去的结果。 */
   restore?: PluginInstallResponse
 }
+
+/** 卸载一个包（官方 `removeBundle`）。 */
+export interface PluginRemoveBody {
+  name: string
+}
+
+/**
+ * 卸载结果：与安装共用同一套投影。
+ *
+ * 官方 `removeBundle` 的语义要注意：**已启用的会先被取消选中**，再走 `pnpm remove`，最后 reload；
+ * 「只在组合里、没有依赖」的可选包则只是取消选中（`installed: false` 时不会再跑 pnpm）。
+ */
+export type PluginRemoveResponse = PluginInstallResponse

@@ -56,6 +56,8 @@ export type {
   PluginInspectBody,
   PluginInspectResponse,
   PluginsListResponse,
+  PluginRemoveBody,
+  PluginRemoveResponse,
   PluginToggleResponse,
   PluginUpdateBody,
   PluginUpdateCandidateView,

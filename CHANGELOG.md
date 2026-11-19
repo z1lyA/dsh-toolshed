@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.8.0] — 2026-11-19
+
+### Added
+
+- **插件可以卸载了**（之前只能停用）：卡片上多了「卸载」按钮，只在官方说这一包**可移除**
+  （`BundleInfo.removable`）时出现——profile 自己装的依赖（含从市场「发现」页装的官方可选 bundle）可以，
+  随 DSH 安装包提供的官方包永远不行（所以没有按钮）。
+  - 二次确认 → 走官方 `pluginManager.removeBundle`：**先移出插件组合（取消选中）→ `pnpm remove` → reload**；
+    `link:` 本地依赖不会删源目录。
+  - **dsh-toolshed 自己不显示卸载入口**，服务层也硬拒绝（409 `self-management`）：卸掉面板当场消失、没有恢复入口。
+  - 官方拒绝码 `not-removable` / `stop-profile` / `bundle-in-use` 原样显示。
+  - 宿主新增路由 `POST /api/plugins/remove`，路由行 24 → **25**；`PluginBundleView` 新增 `removable`。
+
 ## [2.7.2] — 2026-11-19
 
 ### Changed

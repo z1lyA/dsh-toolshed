@@ -10,8 +10,8 @@ import type {
 } from './plugins-tab.types'
 import { Button, Icon, Input, Modal, Puzzle, SegmentedControl, StateDot, Switch, Tag } from 'dsh-tauri-ui/client'
 import { useEffect, useMemo, useState } from 'react'
-import { ApiError, getPlugins, postPluginBundleToggle, postPluginUpdate, postPluginUpdateCheck } from '../apis'
-import { PLUGIN_UPDATE_CHECK_TTL_MS } from '../constants'
+import { ApiError, getPlugins, postPluginBundleToggle, postPluginRemove, postPluginUpdate, postPluginUpdateCheck } from '../apis'
+import { PLUGIN_ID, PLUGIN_UPDATE_CHECK_TTL_MS } from '../constants'
 import { useTimers } from '../hooks/use-timers'
 import { PluginInstallDialog } from './plugins-install-dialog'
 import { isCheckStale, registryUpdatableOf, sortBundlesByUpdate, updateBadgeOf, updatedCountOf } from './plugins-tab.update'
@@ -163,7 +163,7 @@ function updateOutcomeText(t: Translate, body: PluginUpdateResponse): string {
  * 为什么以包为单位而不展开内部模块（2.3.0 用户定稿）：本机 200 多条 Loader 条目绝大多数是
  * DSH 自己的模块，铺开既看不出「装了什么」也没法批量管理；条目级的精细开关在官方「插件」页。
  */
-export function PluginBundleCard({ t, bundle, resolveText, busy, update, updating, onToggleBundle, onUpdate }: PluginBundleCardProps): ReactElement {
+export function PluginBundleCard({ t, bundle, resolveText, busy, update, updating, onToggleBundle, onUpdate, onRemove }: PluginBundleCardProps): ReactElement {
   const title = bundleTitleOf(bundle, resolveText)
   const description = bundleDescriptionOf(bundle, resolveText)
   const switchReason = bundleToggleReasonOf(t, bundle)
@@ -214,6 +214,12 @@ export function PluginBundleCard({ t, bundle, resolveText, busy, update, updatin
           {updating ? t('pluginUpdating') : t('pluginUpdateTo', { version: update.to })}
         </Button>
       )}
+      {/* 卸载入口只对官方说「可移除」的包渲染（随安装包提供的官方包 removable=false）。 */}
+      {bundle.removable === true && onRemove !== undefined && (
+        <Button variant="ghost" size="sm" disabled={busy || updating} onClick={() => onRemove(bundle)}>
+          {t('pluginRemove')}
+        </Button>
+      )}
       <span className="dshp-extension__tip" title={switchReason}>
         <Switch
           checked={bundle.enabled}
@@ -253,6 +259,9 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
   // 「更新到 x.y.z」先落到这里，再由确认弹窗决定要不要真跑。
   const [updateTarget, setUpdateTarget] = useState<{ bundle: PluginBundleView, to: string } | null>(null)
   const [updating, setUpdating] = useState(false)
+  // 「卸载」同样要一次确认：官方语义是「取消选中 → pnpm remove → reload」，点错了包就没了。
+  const [removeTarget, setRemoveTarget] = useState<PluginBundleView | null>(null)
+  const [removing, setRemoving] = useState(false)
   const { mounted } = useTimers()
 
   useEffect(() => {
@@ -362,6 +371,39 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
     // `runCheck` 每次渲染都是新函数，但它只读 state、不参与依赖；这里只按 `data` 触发。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data])
+
+  /** 执行卸载（确认之后）：成功后重拉列表，并清掉这一包的更新缓存。 */
+  const doRemove = async (): Promise<void> => {
+    const target = removeTarget
+    if (target === null)
+      return
+    setRemoving(true)
+    try {
+      const body = await postPluginRemove({ name: target.name })
+      if (!mounted.current)
+        return
+      // 与启停同一套 application 语义：`restart-required` 也算成功（官方会自己 reload / 等重启）。
+      setBanner({
+        ok: body.ok,
+        text: body.ok
+          ? `${t('pluginRemoved')}: ${bundleTitleOf(target, resolveText)}${body.application === 'restart-required' ? ` · ${t('pluginRestartRequired')}` : ''}`
+          : `${t('pluginRemoveFailed')}${body.errorCode === undefined ? '' : ` (${body.errorCode})`}${body.diagnostic === undefined ? '' : ` — ${body.diagnostic}`}`,
+      })
+      if (body.ok) {
+        setRemoveTarget(null)
+        updateCheckCache.delete(target.name)
+        setReload(value => value + 1)
+      }
+    }
+    catch (error) {
+      if (mounted.current)
+        setBanner({ kind: 'error', text: failureTextOf(t, error) })
+    }
+    finally {
+      if (mounted.current)
+        setRemoving(false)
+    }
+  }
 
   /** 执行更新（确认之后才走到这里）：成功后清掉这一包的缓存并重拉列表。 */
   const doUpdate = async (): Promise<void> => {
@@ -573,6 +615,8 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
                 updating={updating && updateTarget?.bundle.name === bundle.name}
                 onToggleBundle={target => void doToggleBundle(target)}
                 onUpdate={(target, version) => setUpdateTarget({ bundle: target, to: version })}
+                // 自己（dsh-toolshed）不给卸载入口：官方可能把它算作可移除，卸掉面板当场消失、没有恢复入口。
+                {...bundle.name === PLUGIN_ID ? {} : { onRemove: (target: PluginBundleView) => setRemoveTarget(target) }}
               />
             )
           })}
@@ -611,6 +655,29 @@ export function PluginsTab({ t, openMarket, resolveText }: PluginsTabProps): Rea
             {typeof checks[updateTarget.bundle.name]?.registry === 'string' && (
               <p className="dshp-extension__intro">{t('pluginUpdateRegistry', { registry: String(checks[updateTarget.bundle.name]?.registry) })}</p>
             )}
+          </>
+        )}
+      </Modal>
+
+      {/* 卸载同样要确认：官方会先取消选中再 pnpm remove，点错包就真的没了。 */}
+      <Modal
+        open={removeTarget !== null}
+        onClose={() => { if (!removing) setRemoveTarget(null) }}
+        closeLabel={t('close')}
+        title={t('pluginRemoveTitle')}
+        footer={(
+          <>
+            <Button variant="ghost" disabled={removing} onClick={() => setRemoveTarget(null)}>{t('cancel')}</Button>
+            <Button variant="danger" disabled={removing} onClick={() => void doRemove()}>
+              {removing ? t('pluginRemoving') : t('pluginRemove')}
+            </Button>
+          </>
+        )}
+      >
+        {removeTarget !== null && (
+          <>
+            <p>{t('pluginRemoveConfirm', { name: bundleTitleOf(removeTarget, resolveText) })}</p>
+            <p className="dshp-extension__intro">{removeTarget.name}</p>
           </>
         )}
       </Modal>

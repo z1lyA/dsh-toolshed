@@ -57,6 +57,7 @@ const EXPECTED_ROUTES: ReadonlyArray<readonly [string, string]> = [
   ['POST', `${P}/plugins/install`],
   ['POST', `${P}/plugins/updates`],
   ['POST', `${P}/plugins/update`],
+  ['POST', `${P}/plugins/remove`],
 ]
 
 /** 同一路径的多个方法由 defineRoutes 收敛为一行注册。 */
@@ -100,12 +101,14 @@ function pluginManagerStub(): {
   installed: Array<{ spec: string, options?: { approvedBuilds?: string[], registry?: string } }>
   versionChecks: string[]
   updated: Array<{ name: string, version: string, options?: { registry?: string } }>
+  removed: string[]
 } {
   const bundleCalls: Array<{ name: string, enabled: boolean }> = []
   const inspected: string[] = []
   const installed: Array<{ spec: string, options?: { approvedBuilds?: string[], registry?: string } }> = []
   const versionChecks: string[] = []
   const updated: Array<{ name: string, version: string, options?: { registry?: string } }> = []
+  const removed: string[] = []
   // 故意把官方包排在前面：排序在宿主做，响应里必须变成「第三方在前」。
   const bundles = [
     {
@@ -136,6 +139,7 @@ function pluginManagerStub(): {
     installed,
     versionChecks,
     updated,
+    removed,
     pluginManager: {
       listBundles: async () => bundles,
       setBundleEnabled: async (name: string, enabled: boolean) => {
@@ -187,6 +191,17 @@ function pluginManagerStub(): {
           to: version,
           step: 'install',
           result: { changed: true, application: 'applied', stage: 'enable', target: name, version },
+        }
+      },
+      removeBundle: async (name: string) => {
+        removed.push(name)
+        // 官方移除后要重启：`application: 'restart-required'` 也是成功（与启停同一套判据）。
+        return {
+          changed: true,
+          application: 'restart-required',
+          stage: 'remove',
+          target: name,
+          packageResult: { exitCode: 0, output: 'Progress: resolved 0', truncated: false, logPath: '/tmp/remove.log' },
         }
       },
     },
@@ -425,6 +440,9 @@ describe('能力管理器路由声明', () => {
       ['POST', `${P}/plugins/update`, { name: 'dsh-context' }, 'name and version are required'],
       ['POST', `${P}/plugins/update`, { name: 'dsh-context', version: '' }, 'name and version are required'],
       ['POST', `${P}/plugins/update`, { name: 'dsh-context', version: '1.1.0', registry: '' }, 'registry must be a non-empty string when given'],
+      ['POST', `${P}/plugins/remove`, {}, 'name is required'],
+      ['POST', `${P}/plugins/remove`, { name: '' }, 'name is required'],
+      ['POST', `${P}/plugins/remove`, { name: 'x'.repeat(201) }, 'name is required'],
     ]
     for (const [method, path, body, error] of cases) {
       const response = await fetch(`${base}${path}`, {
@@ -741,6 +759,58 @@ describe('能力管理器路由声明', () => {
       expect(response.status, path).toBe(503)
       expect(await response.json(), path).toMatchObject({ code: 'plugin-manager-unavailable' })
     }
+
+    dispose()
+  })
+
+  it('pOST /plugins/remove 走官方 removeBundle（200 透出 application / 输出尾部）', async () => {
+    const { pluginManager, removed } = pluginManagerStub()
+    const { base, dispose } = await start({ pluginManager })
+
+    const response = await fetch(`${base}${P}/plugins/remove`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'dsh-context' }),
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      application: 'restart-required',
+      changed: true,
+      output: 'Progress: resolved 0',
+    })
+    expect(removed).toEqual(['dsh-context'])
+
+    dispose()
+  })
+
+  it('pOST /plugins/remove 拒绝卸载 dsh-toolshed 自己（409 self-management）', async () => {
+    const { pluginManager, removed } = pluginManagerStub()
+    const { base, dispose } = await start({ pluginManager })
+
+    const response = await fetch(`${base}${P}/plugins/remove`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'dsh-toolshed' }),
+    })
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ code: 'self-management' })
+    // 服务层就挡住了：一次都没调到官方。
+    expect(removed).toEqual([])
+
+    dispose()
+  })
+
+  it('pOST /plugins/remove 在卸载能力缺失时返回 503', async () => {
+    const { base, dispose } = await start({ pluginManager: { listBundles: async () => [], setBundleEnabled: async () => ({ changed: true, application: 'applied' }) } })
+
+    const response = await fetch(`${base}${P}/plugins/remove`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'dsh-context' }),
+    })
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ code: 'plugin-manager-unavailable' })
 
     dispose()
   })

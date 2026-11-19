@@ -20,6 +20,7 @@ import pluginBundleToggle from './plugins/bundle/toggle/post'
 import plugins from './plugins/get'
 import pluginInspect from './plugins/inspect/post'
 import pluginInstall from './plugins/install/post'
+import pluginRemove from './plugins/remove/post'
 import pluginUpdate from './plugins/update/post'
 import pluginUpdates from './plugins/updates/post'
 import rootsRemove from './roots/delete'
@@ -85,4 +86,9 @@ export const routes = defineRoutes<ExtensionRouteDeps>((disposer) => {
   // 路径数 +2，共 24。
   disposer.post({ kind: 'exact', path: '/dsh-toolshed/api/plugins/updates' }, pluginUpdates)
   disposer.post({ kind: 'exact', path: '/dsh-toolshed/api/plugins/update' }, pluginUpdate)
+
+  // 卸载（2.8.0）：官方 `removeBundle` 会「取消选中 → pnpm remove → reload」，
+  // 我们只校验参数 + 投影结果；自己（dsh-toolshed）在服务层硬拒绝。
+  // 路径数 +1，共 25。
+  disposer.post({ kind: 'exact', path: '/dsh-toolshed/api/plugins/remove' }, pluginRemove)
 })

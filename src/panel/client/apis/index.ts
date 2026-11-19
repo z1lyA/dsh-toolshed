@@ -186,3 +186,11 @@ export function postPluginUpdateCheck(body: Types.PluginUpdateCheckBody, options
 export function postPluginUpdate(body: Types.PluginUpdateBody, options?: FetchOptions) {
   return ofetch<Types.PluginUpdateResponse>("/plugins/update", { baseURL, method: "post", body, ...jsonError, ...options });
 }
+/**
+ * 卸载一个包：走官方 `removeBundle`（取消选中 → pnpm remove → reload）。
+ * 失败原因（not-removable / stop-profile / bundle-in-use）要靠 `...jsonError` 透出机器码。
+ * @method post
+ */
+export function postPluginRemove(body: Types.PluginRemoveBody, options?: FetchOptions) {
+  return ofetch<Types.PluginRemoveResponse>("/plugins/remove", { baseURL, method: "post", body, ...jsonError, ...options });
+}

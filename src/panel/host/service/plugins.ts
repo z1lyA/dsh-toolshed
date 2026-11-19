@@ -24,6 +24,8 @@ import type {
   PluginInstallBody,
   PluginInstallResponse,
   PluginsListResponse,
+  PluginRemoveBody,
+  PluginRemoveResponse,
   PluginToggleResponse,
   PluginUpdateBody,
   PluginUpdateCandidateView,
@@ -59,6 +61,8 @@ export interface OfficialBundleInfo {
   error?: { code?: string }
   /** `registry` | `git`；缺省 = 不能更新（`link:` 本地依赖就是这种）。 */
   update?: string
+  /** 能不能卸载（官方口径：profile 自己装的依赖，或「只在组合里、没有依赖」的可选包）。 */
+  removable?: boolean
 }
 
 export interface OfficialChangeResult {
@@ -160,6 +164,11 @@ export interface OfficialPluginUpdateResult {
 export interface PluginUpdaterService {
   listVersions: (name: string, options?: { registry?: string | null }) => Promise<unknown>
   updateBundle: (name: string, version: string, options?: { registry?: string | null }) => Promise<unknown>
+}
+
+/** 卸载能力（官方 `removeBundle`）。 */
+export interface PluginRemoverService {
+  removeBundle: (name: string) => Promise<unknown>
 }
 
 /**
@@ -299,6 +308,34 @@ export function resolvePluginUpdater(ctx: HostServiceHub): PluginUpdaterService 
     : undefined
 }
 /**
+ * 惰性解析同一个 `pluginManager` 的**卸载**能力（官方 `removeBundle`）。
+ *
+ * 单独判：老宿主有启停不一定有卸载；缺它时只让卸载入口降级（503），列表/启停照旧。
+ */
+export function resolvePluginRemover(ctx: HostServiceHub): PluginRemoverService | undefined {
+  const candidate = readService(ctx, 'pluginManager')
+  if (candidate === null || typeof candidate !== 'object')
+    return undefined
+  const remover = candidate as PluginRemoverService
+  return typeof remover.removeBundle === 'function' ? remover : undefined
+}
+
+/**
+ * 卸载一个包。
+ *
+ * 官方语义（`removeBundle`）：已启用的先取消选中 → `pnpm remove <name>` → reload；「只在组合里、
+ * 没有依赖」的可选包则只是取消选中。拒绝情形：`not-removable` / `stop-profile`（无 hmr 且已在跑）/
+ * `bundle-in-use`（还有活的 Loader 条目）。
+ *
+ * 「卸载 dsh-toolshed 自己」在服务层硬拒绝：官方的 `removable` 对 link 依赖可能为 true，
+ * 卸掉面板就当场消失、没有恢复入口（与停用同一个理由）。
+ */
+export async function removeBundle(remover: PluginRemoverService, name: string): Promise<PluginRemoveResponse> {
+  if (name === SELF_BUNDLE)
+    throw new PluginRequestError(PLUGIN_SELF_MANAGEMENT, 'this panel cannot uninstall itself')
+  return toInstallResponse(await remover.removeBundle(name))
+}
+/**
  * `LocalizedText` 原样透传，只挡非字符串值。
  *
  * **不**在宿主端解析语言：`ctx.locale.resolveText()` 在客户端，且用户切换语言时宿主缓存的那份就过期了。
@@ -359,6 +396,9 @@ function projectBundle(item: unknown): PluginBundleView | undefined {
   // 页面据此决定要不要显示「更新」入口——**别自己按有没有版本号去猜**。
   if (typeof bundle.update === 'string')
     view.update = bundle.update
+  // 卸载入口只对官方说「可移除」的包渲染：随安装包提供的官方包永远是 false，点了也只会拿到 not-removable。
+  if (bundle.removable === true)
+    view.removable = true
   return view
 }
 
@@ -689,6 +729,8 @@ export interface PluginsAdmin {
   checkUpdates: (body: PluginUpdateCheckBody) => Promise<PluginUpdateCheckResponse>
   /** 执行更新：先卸旧版再装新版，失败时官方会把旧版装回去。 */
   update: (body: PluginUpdateBody) => Promise<PluginUpdateResponse>
+  /** 卸载一个包（官方 `removeBundle`；自己永远拒绝）。 */
+  remove: (body: PluginRemoveBody) => Promise<PluginRemoveResponse>
 }
 
 /**
@@ -745,6 +787,16 @@ export function createPluginsAdmin(ctx: HostServiceHub): PluginsAdmin {
     }
     return updater
   }
+  const removerOrThrow = (): PluginRemoverService => {
+    const remover = resolvePluginRemover(ctx)
+    if (remover === undefined) {
+      throw new PluginRequestError(
+        PLUGIN_MANAGER_UNAVAILABLE,
+        'the pluginManager service in this dsh build cannot remove packages',
+      )
+    }
+    return remover
+  }
   return {
     list: async () => ({ bundles: await listPluginBundles(managerOrThrow()) }),
     toggleBundle: async body => toggleBundle(managerOrThrow(), body.name, body.enabled),
@@ -754,5 +806,6 @@ export function createPluginsAdmin(ctx: HostServiceHub): PluginsAdmin {
     ),
     checkUpdates: async body => checkUpdates(updaterOrThrow(), body.names),
     update: async body => updateBundled(updaterOrThrow(), body),
+    remove: async body => removeBundle(removerOrThrow(), body.name),
   }
 }

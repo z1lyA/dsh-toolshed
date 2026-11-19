@@ -43,7 +43,7 @@ pnpm install
 pnpm typecheck     # tsc --noEmit（上游代码宽松，故 strict: false）
 pnpm build         # node scripts/build.mjs
 pnpm test          # node scripts/run-tests.mjs（签绑定 + 挑非 hardened Node，见约束 3）
-node .test/host-smoke.mjs 24   # 不起 DSH：mock ctx 调 apply()，数 webServer.register 的行数（应为 24）
+node .test/host-smoke.mjs 25   # 不起 DSH：mock ctx 调 apply()，数 webServer.register 的行数（应为 25）
 ```
 
 > **typecheck 需要宿主提供的 `@deepseek-ai/*` 类型**（约束 4 让它们保持 external）。作者机器上这些类型来自
@@ -83,7 +83,7 @@ curl -s http://127.0.0.1:<port>/dsh-toolshed/api/skills
 ```
 
 host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.js`，用带 `webServer` / `skills` / `connection` / `logger` / `on`
-的 mock ctx 调 `apply(ctx, { profile: 'desktop' })`，应注册 **24** 条路由且不抛错（`.test/host-smoke.mjs` 就是它）。
+的 mock ctx 调 `apply(ctx, { profile: 'desktop' })`，应注册 **25** 条路由且不抛错（`.test/host-smoke.mjs` 就是它）。
 
 ## 约定
 
@@ -174,6 +174,12 @@ host 半可以在没有 DSH 的情况下冒烟测试：`node` 导入 `lib/index.
     `update === 'git'` 需要调用方给钉到 full commit 的 spec，面板不做，只提示去官方页）。
   - 客户端策略（2.7.0 定）：进 tab 自动批量查一次 + 10 分钟内存缓存；**检查全部完成后一次性**把有更新的置顶；
     **每次更新都要确认**（不做「查到就装」）。
+- **卸载走官方 `removeBundle`**（`service/plugins.ts` 的 `resolvePluginRemover`，2.8.0）：官方语义是
+  「已启用的先取消选中 → `pnpm remove` → reload」；「只在组合里、没有依赖」的可选包只是取消选中。
+  拒绝码 `not-removable` / `stop-profile` / `bundle-in-use` 原样透出。**卸载入口只对 `removable: true` 的包渲染**
+  ——随安装包提供的官方包永远是 false（点了只会拿到 `not-removable`）。`dsh-toolshed` 自己不显示入口、
+  服务层也硬拒绝（409 `self-management`）。`inspect` 对「已安装的包名」一律回 `already-installed`，
+  所以**升级已安装的包要走卸载/更新路径，不能靠安装弹窗**。
 - **侧栏自带的「插件」行是 DOM 兜底隐藏的，「更多」只在安全时才藏**（`register/sidebar-tweaks.ts`），
   属**已知易碎**方案：官方 `ctx.slots` 没有 `when/hidden`、不能反注册他人条目，pins 还把 `plugins` 写死常驻，
   只有 DOM 一条路。定位只用语义锚点（`[data-slot="sidebar.panellist"]` 认 nav、运行时按槽条目 label 反查

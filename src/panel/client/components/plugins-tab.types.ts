@@ -41,6 +41,8 @@ export interface PluginBundleCardProps {
   onToggleBundle: (bundle: PluginBundleView) => void
   /** 用户点了「更新到 x.y.z」：由页面弹确认，真正的执行也在页面里。 */
   onUpdate?: (bundle: PluginBundleView, version: string) => void
+  /** 用户点了「卸载」：由页面弹确认，真正的执行也在页面里。缺席 = 不渲染卸载入口。 */
+  onRemove?: (bundle: PluginBundleView) => void
 }
 
 /**
