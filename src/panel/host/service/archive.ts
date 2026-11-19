@@ -436,6 +436,11 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
       }
       const descendants = descendantsOf(id, headers)
       const measured = await measureGroup([id, ...descendants])
+      // 2.7.2：日志目录已经不在的归档会话不再列出。
+      // 用户删除是「当场删文件、留归档墓碑」，墓碑要等下次启动才清（清了侧栏就会冒出「未分类」空壳）；
+      // 中间这段时间这一行若照旧显示，就成了一个点不开的「无日志」空壳。真正的墓碑清理由启动 sweep 做。
+      if (!measured.hasLog)
+        continue
       const workspace = ownership.get(id)
       inventory.push({
         id,
@@ -492,9 +497,8 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
         descendants,
         live,
         pending: pendingEntry === undefined ? undefined : pendingView(pendingEntry),
-        // 2.7.1 起用户删除**一律排队**（见 `removeUnlocked` 的注释），所以计划里除了「已经在队列里」的，
-        // 其余都算「下次启动执行」——确认弹窗据此显示「排队」而不是「立即」。
-        willQueue: pendingEntry === undefined,
+        // 只有「内存里还活着」的才排队；其余当场删（2.7.2 定稿）。
+        willQueue: pendingEntry === undefined && (live || liveDescendant !== undefined),
         liveDescendant,
         logBytes: measured.logBytes,
         cacheBytes: measured.cacheBytes,
@@ -527,7 +531,7 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
   /** 真正的删除实现（调用方已持锁）。 */
   const removeUnlocked = async (
     ids: unknown,
-    options: { cleanupAttachments?: boolean, queueLive?: boolean, ignoreQueue?: boolean } = {},
+    options: { cleanupAttachments?: boolean, queueLive?: boolean, ignoreQueue?: boolean, unarchiveOnDelete?: boolean } = {},
   ): Promise<ArchiveRemoveResponse> => {
     const unique = validateIds(ids)
     const cleanupAttachments = options.cleanupAttachments ?? cleanupAttachmentsDefault
@@ -562,19 +566,6 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
       }
       if (!ignoreQueue && queuedIds.has(id)) {
         results.push({ id, deleted: false, queued: true, alreadyQueued: true, freedBytes: 0, warnings: [] })
-        continue
-      }
-      // 2.7.1 起：**用户删除一律排队到下次启动**，不在请求里删文件。
-      //
-      // 为什么不再当场删：当场删要顺手做三件收尾（`detachSession` / `unpinSession` / `unarchiveSession`，
-      // 见下面的 `deletedIds` 分支）——而宿主内存里还记着这些会话，归档墓碑一清，侧栏就会把它们渲染成
-      // 「未分类」的空壳（用户实测过）。把「真正删除」与「墓碑/槽位清理」都推迟到启动时（`ignoreQueue`
-      // 那条 sweep 路径），那时注册表从磁盘重建，本页与原生侧栏都不会出现中间态。
-      // 想立刻执行就用右上角「重启服务」——那条路本来就有。
-      if (!ignoreQueue) {
-        queuedIds.add(id)
-        queueAdditions.push(id)
-        results.push({ id, deleted: false, queued: true, freedBytes: 0, warnings: [] })
         continue
       }
       if (liveSession(id) !== undefined) {
@@ -707,11 +698,16 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
         catch {
           /* 置顶与归档互斥；这里只是一致性兜底 */
         }
-        try {
-          await requireRegistry().unarchiveSession(sessionId)
-        }
-        catch (error) {
-          warnings.push(`archive record cleanup failed for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`)
+        // 2.7.2 起**不在删除时清归档墓碑**：宿主内存里还记着这条会话，墓碑一清侧栏就会把它渲染成
+        // 「未分类」空壳（用户实测过）。文件已经删了，墓碑等下次启动的 sweep 统一清（见 `sweepPending`
+        // 的孤儿墓碑处理）——那时注册表从磁盘重建，对外不可见的中间态才不会泄漏到界面上。
+        if (options.unarchiveOnDelete !== false) {
+          try {
+            await requireRegistry().unarchiveSession(sessionId)
+          }
+          catch (error) {
+            warnings.push(`archive record cleanup failed for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`)
+          }
         }
         deletedIds.add(sessionId)
       }
@@ -818,9 +814,14 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
     }
   }
 
-  /** 删除入口：内存里还活着的会话改为排队到下次启动，而不是报错。 */
+  /**
+   * 删除入口：非 live 的**当场删文件**，live 的排队到下次启动。
+   *
+   * 归档墓碑**不当场清**（`unarchiveOnDelete: false`）：清了宿主内存里那条会话就会以「未分类」形态
+   * 冒到原生侧栏；留到下次启动由 sweep 统一清（那时注册表从磁盘重建，中间态不会泄漏）。
+   */
   const remove = (ids: unknown, options: { cleanupAttachments?: boolean } = {}): Promise<ArchiveRemoveResponse> =>
-    serialize(() => removeUnlocked(ids, options))
+    serialize(() => removeUnlocked(ids, { ...options, unarchiveOnDelete: false }))
 
   /** 撤销排队中的删除。此刻磁盘上什么都没动，取消是即时且不可能丢数据的。 */
   const cancelPending = (ids: unknown): Promise<ArchiveCancelResponse> => serialize(async () => {
@@ -857,6 +858,48 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
   })
 
   /**
+   * 清「孤儿归档墓碑」：日志目录已经不存在的归档会话。
+   *
+   * 为什么需要它：2.7.2 起用户删除**当场删文件、留墓碑**（清了墓碑，宿主内存里那条会话就会以
+   * 「未分类」形态冒到原生侧栏），墓碑只能等下次启动清。这里只处理「目录确实不存在、且不在跑」的；
+   * `sessions` 根读不出来时整段跳过——不要凭一次失败就丢掉归档标记。
+   */
+  const cleanOrphanTombstones = async (skipIds: ReadonlySet<string>): Promise<string[]> => {
+    const orphans: string[] = []
+    try {
+      const candidates = [...archivedSet()].filter(id => !skipIds.has(id))
+      if (candidates.length === 0)
+        return orphans
+      const { found } = await findSessionDirs(roots.sessions, candidates)
+      for (const id of candidates) {
+        if (found.has(id) || liveSession(id) !== undefined)
+          continue
+        try {
+          ownershipIndex().get(id)?.detachSession?.(id)
+        }
+        catch {}
+        try {
+          registry()?.detachSession?.(id)
+        }
+        catch {}
+        try {
+          await requireRegistry().unpinSession(id)
+        }
+        catch {}
+        try {
+          await requireRegistry().unarchiveSession(id)
+          orphans.push(id)
+        }
+        catch {}
+      }
+    }
+    catch (error) {
+      warn(`[dsh-toolshed] orphan archive cleanup skipped: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    return orphans
+  }
+
+  /**
    * Host 启动时执行队列（那时没有 live 会话）。
    *
    * 每条都重新校验：取消归档的丢掉意图，仍 live 的留到下次启动，删除失败保留原因供页面显示。
@@ -876,8 +919,10 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
       }
     }
     if (queue.length === 0) {
+      // 队列空也要跑一遍孤儿墓碑清理：它清的是「上次启动删掉文件时留下的墓碑」，与队列无关。
+      const orphans = await cleanOrphanTombstones(new Set())
       return {
-        results: { deleted: [], failed: [], dropped: [], kept: [] },
+        results: { deleted: [], failed: [], dropped: [], kept: [], orphans },
         totals: { queued: 0, deleted: 0, kept: 0, dropped: 0, freedBytes: 0 },
         generatedAt: new Date().toISOString(),
       }
@@ -952,8 +997,11 @@ export function createArchiveAdmin(ctx: HostServiceHub, config: ArchiveConfig = 
     catch (error) {
       warn(`[dsh-toolshed] could not rewrite the pending deletion queue: ${error instanceof Error ? error.message : String(error)}`)
     }
+    // 孤儿墓碑：本地删过文件的会话，归档标记留到了这次启动才清（2.7.2 的删除不再当场清墓碑，
+    // 否则宿主内存里那条会话会以「未分类」形态冒到原生侧栏）。
+    const orphans = await cleanOrphanTombstones(new Set([...keep.map(entry => entry.id), ...deleted.map(item => item.id)]))
     return {
-      results: { deleted, failed, dropped, kept: keep.map(entry => entry.id) },
+      results: { deleted, failed, dropped, kept: keep.map(entry => entry.id), orphans },
       totals: {
         queued: queue.length,
         deleted: deleted.length,

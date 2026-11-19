@@ -280,8 +280,8 @@ export function ArchiveTab({ t }: ArchiveTabProps): ReactElement {
       setSelected(new Set())
       setOutcome({
         ok: body.totals.failed === 0,
-        // 2.7.1 起删除一律排队：主句必须说「已排队」，否则用户会以为磁盘已经释放了。
-        text: `${t('archiveQueued')}: ${body.totals.queued} · ${t('archiveDeferred')}${body.totals.failed === 0 ? '' : ` · ${t('archiveFailures')}: ${body.totals.failed}`}`,
+        // 2.7.2 起恢复「当场删文件」，所以主句是「已删除」；只有内存里活着的会话会退化成排队。
+        text: `${t('archiveDeleted')}: ${body.totals.deleted} · ${t('archiveFreed')}: ${formatBytes(body.totals.freedBytes)}${body.totals.queued === 0 ? '' : ` · ${t('archiveQueued')}: ${body.totals.queued}`}${body.totals.failed === 0 ? '' : ` · ${t('archiveFailures')}: ${body.totals.failed}`}`,
       })
       const lines: ArchiveFailureLine[] = []
       for (const result of body.results) {
@@ -290,7 +290,9 @@ export function ArchiveTab({ t }: ArchiveTabProps): ReactElement {
         for (const warning of result.warnings)
           lines.push({ id: result.id, text: warning })
       }
-      if (body.attachment.skipped !== undefined && body.attachment.skipped !== 'disabled')
+      // `no-candidates` = 这条会话没有附件要清（正常），`disabled` = 用户没勾选；两种都不是失败，
+      // 别让它们把横幅写成「部分条目未完成」（用户实测过这个误导）。
+      if (body.attachment.skipped !== undefined && body.attachment.skipped !== 'disabled' && body.attachment.skipped !== 'no-candidates')
         lines.push({ id: t('archiveAttachment'), text: body.attachment.skipped })
       setFailures(lines)
     }
@@ -317,7 +319,20 @@ export function ArchiveTab({ t }: ArchiveTabProps): ReactElement {
         <h3>{t('archiveTitle')}</h3>
         <span className="dshp-extension__spacer" />
         {/* 用文字按钮而不是图标：面板右上角的重启控件已经有一个刷新图标，两个旋转图标并排会认错。 */}
-        <Button variant="ghost" size="sm" disabled={busy} onClick={() => setReload(value => value + 1)}>{t('refresh')}</Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onClick={() => {
+            // 刷新就是「重新读一遍」：上一次操作的结果横幅与失败明细也该一起清掉，
+            // 否则它一直挂在那儿，用户只能靠离开页面再回来把它弄走（实测反馈）。
+            setOutcome(null)
+            setFailures([])
+            setReload(value => value + 1)
+          }}
+        >
+          {t('refresh')}
+        </Button>
       </div>
       <p className="dshp-extension__intro">{t('archiveIntro')}</p>
 

@@ -206,10 +206,10 @@ describe('会话管理路由（HTTP 级）', () => {
     expect(listed.totals).toMatchObject({ count: 2, pending: 0 })
 
     const plan = await (await fetch(`${base}${P}/archive/plan`, jsonBody({ ids: [persistentId, liveId] }))).json() as any
-    // 2.7.1 起删除一律排队，所以计划里没有「立即」那一类。
-    expect(plan.totals).toMatchObject({ count: 2, immediate: 0, queued: 2 })
+    // 2.7.2：非 live 当场删（计划里算「立即」），live 的才排队。
+    expect(plan.totals).toMatchObject({ count: 2, immediate: 1, queued: 1 })
     expect(plan.items.find((item: any) => item.id === liveId)).toMatchObject({ ok: true, live: true, willQueue: true })
-    expect(plan.items.find((item: any) => item.id === persistentId)).toMatchObject({ ok: true, willQueue: true })
+    expect(plan.items.find((item: any) => item.id === persistentId)).toMatchObject({ ok: true })
 
     // 取消归档：注册表集合被改，列表少一条
     const unarchive = await (await fetch(`${base}${P}/archive/unarchive`, jsonBody({ ids: [persistentId] }))).json() as any
@@ -251,7 +251,7 @@ describe('会话管理路由（HTTP 级）', () => {
       dispose()
   })
 
-  it('非 live 的归档会话也只排队：文件留着、列表里不再显示，等启动时删', async () => {
+  it('非 live 的归档会话当场被删：文件释放，但归档墓碑留到下次启动', async () => {
     const world = createWorld()
     const id = 'session-cccc-3333'
     world.archived.add(id)
@@ -265,18 +265,16 @@ describe('会话管理路由（HTTP 级）', () => {
       body: JSON.stringify({ ids: [id], cleanupAttachments: false }),
     })).json() as any
 
-    // 2.7.1：`DELETE /archive` 只入队——当场删要清归档墓碑，宿主内存里还记着会话，
-    // 清掉墓碑后原生侧栏会把它渲染成「未分类」空壳。真正删除在下次启动的 sweep 里。
-    expect(body.totals).toMatchObject({ deleted: 0, queued: 1, freedBytes: 0 })
-    expect(body.results[0]).toMatchObject({ id, deleted: false, queued: true })
-    expect(existsSync(log)).toBe(true)
-    expect(existsSync(cache)).toBe(true)
-
-    // 列表里不再显示它，只留一个 id 给页面显示「N 条已排队 · 取消」。
+    // 2.7.2：非 live 当场删（磁盘立刻释放），但**不清归档墓碑**——清了侧栏会冒出「未分类」空壳。
+    expect(body.totals).toMatchObject({ deleted: 1, queued: 0 })
+    expect(body.totals.freedBytes).toBeGreaterThanOrEqual(2048)
+    expect(body.results[0]).toMatchObject({ id, deleted: true })
+    expect(existsSync(log)).toBe(false)
+    expect(existsSync(cache)).toBe(false)
+    // 列表里不再显示它（日志已经不在），也没有排队项。
     const listed = await (await fetch(`${base}${P}/archived`)).json() as any
     expect(listed.items).toEqual([])
-    expect(listed.pendingIds).toEqual([id])
-    expect(listed.totals.pending).toBe(1)
+    expect(listed.pendingIds).toEqual([])
 
     for (const dispose of world.disposers.splice(0))
       dispose()

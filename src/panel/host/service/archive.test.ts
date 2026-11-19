@@ -258,11 +258,11 @@ describe('archive.plan', () => {
 
 describe('archive.remove', () => {
   /**
-   * 2.7.1 起 `remove` **只排队**：真正的删除与归档记录清理都在启动 sweep 里做
-   * （否则当场清墓碑会让宿主内存里的会话在原生侧栏变成「未分类」空壳）。
-   * 所以「删掉了什么」要分两次看：先断言排队与磁盘未动，再跑一次 sweep 断言真正删除。
+   * 2.7.2 定稿的语义：**当场删文件**（磁盘立刻释放），但**不清归档墓碑**——
+   * 清了宿主内存里那条会话就会以「未分类」形态冒到原生侧栏。墓碑留到下次启动由 sweep 清。
+   * 列表里「目录已经不在」的行同时被过滤掉，所以两个页面都看不到它。
    */
-  it('删除先排队：日志/缓存/归档记录都在启动 sweep 时才消失', async () => {
+  it('当场删日志与缓存，但归档墓碑留到下次启动（侧栏因此不会冒出未分类）', async () => {
     const root = await workspace('dsa-remove-')
     const id = 'session-abc'
     const layout = await layoutSession(root, id)
@@ -273,27 +273,20 @@ describe('archive.remove', () => {
       headers: [{ id, cwd: path.join(root, 'project') }],
     })
     const result = await admin.remove([id], { cleanupAttachments: false })
-    expect(result.results[0]).toMatchObject({ deleted: false, queued: true })
-    expect(result.totals).toMatchObject({ deleted: 0, queued: 1, freedBytes: 0 })
-    // 磁盘一处都没动，归档墓碑也还在（这正是「侧栏不会冒出未分类」的原因）。
-    expect(await exists(layout.directory)).toBe(true)
-    expect(await exists(layout.cache)).toBe(true)
-    expect(calls.unarchive).toEqual([])
-    // 排队项不再出现在列表里，只回一个 id 给页面显示「N 条已排队 · 取消」。
-    const listed = await admin.list()
-    expect(listed.items).toEqual([])
-    expect(listed.pendingIds).toEqual([id])
-    expect(listed.totals.pending).toBe(1)
-
-    const swept = await admin.sweepPending()
-    expect(swept.totals.deleted).toBe(1)
-    expect(swept.totals.freedBytes).toBe(150)
+    expect(result.results[0].deleted).toBe(true)
+    expect(result.totals.deleted).toBe(1)
+    expect(result.totals.freedBytes).toBe(150)
     expect(await exists(layout.directory)).toBe(false)
     expect(await exists(layout.cache)).toBe(false)
-    expect(calls.unarchive).toEqual([id])
+    // 关键：不当场清归档墓碑。
+    expect(calls.unarchive).toEqual([])
+    // 列表里也不再显示（日志已经不在）。
+    const listed = await admin.list()
+    expect(listed.items).toEqual([])
+    expect(listed.pendingIds).toEqual([])
   })
 
-  it('日志与缓存早就不在了：排队后仍会在 sweep 里清掉归档记录', async () => {
+  it('日志与缓存早就不在了：照样算删成功，墓碑等 sweep 清', async () => {
     const root = await workspace('dsa-orphan-')
     const id = 'session-ghost'
     const { admin, calls } = harness({
@@ -308,16 +301,17 @@ describe('archive.remove', () => {
     expect(planned.items[0].totalBytes).toBe(0)
 
     const result = await admin.remove([id], { cleanupAttachments: false })
-    expect(result.results[0].queued).toBe(true)
+    expect(result.results[0].deleted).toBe(true)
     expect(result.totals.freedBytes).toBe(0)
     expect(calls.unarchive).toEqual([])
 
+    // 下次启动：孤儿墓碑（目录已不存在）被统一清掉。
     const swept = await admin.sweepPending()
-    expect(swept.totals.deleted).toBe(1)
+    expect(swept.results.orphans).toEqual([id])
     expect(calls.unarchive).toEqual([id])
   })
 
-  it('live 会话与非归档 id：同样只排队 / 被拒绝', async () => {
+  it('live 会话只排队，非归档 id 被拒绝', async () => {
     const root = await workspace('dsa-refuse-')
     const id = 'session-abc'
     const layout = await layoutSession(root, id)
@@ -352,7 +346,7 @@ describe('archive.remove', () => {
     expect(otherResult.results[0].code).toBe('not-archived')
   })
 
-  it('附件清理跟着排队项走：sweep 时才只删没人引用的那些', async () => {
+  it('只清没有人再引用的附件', async () => {
     const root = await workspace('dsa-attach-remove-')
     const target = 'session-abc'
     const keep = 'session-keep'
@@ -378,19 +372,17 @@ describe('archive.remove', () => {
     const pathsC = await layoutAttachment(attachments, HASH_C, 'c.txt')
 
     const result = await admin.remove([target], { cleanupAttachments: true })
-    expect(result.results[0].queued).toBe(true)
-    // 排队阶段一个附件都不碰。
-    expect(await exists(pathsA.object)).toBe(true)
-    expect(await exists(pathsC.object)).toBe(true)
-
-    await admin.sweepPending()
+    expect(result.results[0].deleted).toBe(true)
+    expect(result.attachment.deleted).toBe(2)
+    // 每个对象 3 处 × 10 字节 ＝ 30，删两个 ＝ 60
+    expect(result.attachment.freedBytes).toBe(60)
     expect(await exists(pathsA.object)).toBe(false)
     expect(await exists(pathsC.object)).toBe(false)
     expect(await exists(pathsB.object)).toBe(true)
     expect(await exists(path.join(pathsB.fileAlias, 'b.txt'))).toBe(true)
   })
 
-  it('引用扫描不完整时一个附件都不删（sweep 之后仍然如此）', async () => {
+  it('引用扫描不完整时一个附件都不删', async () => {
     const root = await workspace('dsa-attach-skip-')
     const target = 'session-abc'
     const keep = 'session-keep'
@@ -410,12 +402,13 @@ describe('archive.remove', () => {
     })
     const pathsA = await layoutAttachment(attachments, HASH_A, 'a.txt')
     const result = await admin.remove([target], { cleanupAttachments: true })
-    expect(result.results[0].queued).toBe(true)
-    await admin.sweepPending()
+    expect(result.results[0].deleted).toBe(true)
+    expect(result.attachment.deleted).toBe(0)
+    expect(result.attachment.skipped).toBe('read-failed')
     expect(await exists(pathsA.object)).toBe(true)
   })
 
-  it('subagent 后代跟着父会话走：sweep 时一起删，无关会话留下', async () => {
+  it('subagent 后代跟着父会话走，无关会话留下；墓碑仍不当场清', async () => {
     const root = await workspace('dsa-desc-')
     const parent = 'session-parent'
     const child = 'session-child'
@@ -433,17 +426,12 @@ describe('archive.remove', () => {
       ],
     })
     const result = await admin.remove([parent], { cleanupAttachments: false })
-    // 排队阶段不算后代（那段计算在真正的删除分支里），这里只断言「已排队、磁盘未动」。
-    expect(result.results[0]).toMatchObject({ queued: true })
-    expect(await exists(parentLayout.directory)).toBe(true)
-
-    await admin.sweepPending()
+    expect(result.results[0].deleted).toBe(true)
     expect(await exists(parentLayout.directory)).toBe(false)
     expect(await exists(childLayout.directory)).toBe(false)
     expect(await exists(unrelatedLayout.directory)).toBe(true)
     expect(calls.archive).toEqual([child])
-    expect(calls.unarchive.includes(child)).toBe(true)
-    expect(calls.unarchive.includes(parent)).toBe(true)
+    expect(calls.unarchive).toEqual([])
   })
 })
 

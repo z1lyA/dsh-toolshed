@@ -74,8 +74,8 @@ const present = [
   [client, '/plugins/update'],
   [host, '/dsh-toolshed/api/plugins/updates'],
   [host, '/dsh-toolshed/api/plugins/update'],
-  // 2.7.1：会话删除一律排队（文案与 pendingIds 都在产物里）
-  [client, 'archiveDeferred'],
+  // 2.7.2：删除当场删文件、墓碑留到启动清扫（文案与 pendingIds 都在产物里）
+  [client, 'archivePendingHint'],
   // 侧栏「插件」「更多」两行的 DOM 兜底：标记属性与语义锚点都必须在产物里
   [client, 'data-toolshed-hidden'],
   [client, 'aria-haspopup'],

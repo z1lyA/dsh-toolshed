@@ -134,7 +134,10 @@ export interface ArchiveUnarchiveResponse {
 
 /** 宿主启动清扫的摘要（仅日志用）。 */
 export interface ArchiveSweepResponse {
-  results: { deleted: Array<{ id: string, freedBytes?: number }>, failed: Array<{ id: string, code: string }>, dropped: Array<{ id: string, reason: string }>, kept: string[] }
+  results: { deleted: Array<{ id: string, freedBytes?: number }>, failed: Array<{ id: string, code: string }>, dropped: Array<{ id: string, reason: string }>, kept: string[], /**
+   * 启动时顺手清掉的「孤儿归档墓碑」：日志目录已经不存在的归档会话（2.7.2 起用户删除不再当场清墓碑）。
+   */
+  orphans?: string[] }
   totals: { queued: number, deleted: number, kept: number, dropped: number, freedBytes: number }
   error?: string
   generatedAt: string
